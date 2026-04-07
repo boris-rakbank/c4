@@ -102,6 +102,49 @@ export function setNodeClass(source, nodeId, newClassName) {
 }
 
 /**
+ * Replace all `%% @pos <id> <x> <y>` position comments with a fresh set.
+ *
+ * For each id in `positions`, the comment line is placed immediately above
+ * the matching `class <id> ...` line if one exists; otherwise appended at
+ * end of source. Old position comments for any id are removed first.
+ */
+export function setNodePositions(source, positions) {
+  // Normalize input to a Map<id, {x, y}>
+  const map = positions instanceof Map
+    ? new Map(positions)
+    : new Map(Object.entries(positions))
+
+  // Step 1: strip every existing %% @pos line.
+  const lines = source.split('\n').filter(l => !/^\s*%%\s*@pos\s+/.test(l))
+
+  // Step 2: walk lines; when we hit a single-id `class` line whose id has
+  // a saved position, insert the comment immediately above it.
+  const out = []
+  for (const line of lines) {
+    const m = line.match(/^(\s*)class\s+(.+?)\s+(\S+)\s*$/)
+    if (m) {
+      const ids = m[2].split(',').map(s => s.trim()).filter(Boolean)
+      if (ids.length === 1 && map.has(ids[0])) {
+        const { x, y } = map.get(ids[0])
+        out.push(`${m[1]}%% @pos ${ids[0]} ${Math.round(x)} ${Math.round(y)}`)
+        map.delete(ids[0])
+      }
+    }
+    out.push(line)
+  }
+
+  // Step 3: any remaining ids (no class line) get appended at end.
+  if (map.size > 0) {
+    while (out.length && out[out.length - 1].trim() === '') out.pop()
+    for (const [id, { x, y }] of map) {
+      out.push(`    %% @pos ${id} ${Math.round(x)} ${Math.round(y)}`)
+    }
+  }
+
+  return out.join('\n')
+}
+
+/**
  * Drop any `classDef X ...` line where no `class ... X` line references it.
  * Keeps the lazy invariant: removed/changed assignments don't leave dead defs.
  */

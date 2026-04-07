@@ -1,8 +1,9 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
-import { applyNodeStyle } from './sourceRewriter.js'
+import { applyNodeStyle, setNodePositions } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
+import { routeAllEdges } from '../routing/orthogonalRouter.js'
 
 const BOUNDARY_PADDING = 30
 const BOUNDARY_TITLE_HEIGHT = 40
@@ -61,6 +62,13 @@ export const useDiagramStore = defineStore('diagram', () => {
   const getBoundaryById = computed(() => {
     const map = new Map(boundaries.value.map(b => [b.id, b]))
     return (id) => map.get(id)
+  })
+
+  // Auto-routed orthogonal edges. Recomputes whenever nodes or edges change,
+  // so dragging a node reroutes connected edges automatically.
+  const routedEdges = computed(() => {
+    const routes = routeAllEdges(nodes.value, edges.value)
+    return edges.value.map(e => ({ ...e, points: routes.get(e.id) || null }))
   })
 
   // Get all nodes that belong to a boundary (direct children)
@@ -180,9 +188,19 @@ export const useDiagramStore = defineStore('diagram', () => {
     }
   }
 
-  // Called when drag ends — snaps content to top-left
+  // Called when drag ends — snaps content to top-left and persists positions
+  // back to the source as `%% @pos` comments so they survive a reparse.
   function finishDrag() {
     normalizePositions()
+    persistPositionsToSource()
+  }
+
+  function persistPositionsToSource() {
+    const positions = {}
+    for (const n of nodes.value) {
+      positions[n.id] = { x: n.x, y: n.y }
+    }
+    mermaidSource.value = setNodePositions(mermaidSource.value, positions)
   }
 
   function moveChildBoundaries(parentId, dx, dy) {
@@ -205,24 +223,12 @@ export const useDiagramStore = defineStore('diagram', () => {
     mermaidSource.value = source
     const result = parseMermaid(source)
 
-    const existingNodePos = new Map(nodes.value.map(n => [n.id, { x: n.x, y: n.y }]))
-    const existingBoundaryPos = new Map(boundaries.value.map(b => [b.id, { x: b.x, y: b.y, width: b.width, height: b.height }]))
-
-    nodes.value = result.nodes.map(node => {
-      const existing = existingNodePos.get(node.id)
-      if (existing) return { ...node, x: existing.x, y: existing.y, style: node.style }
-      return node
-    })
-
-    boundaries.value = result.boundaries.map(b => {
-      const existing = existingBoundaryPos.get(b.id)
-      if (existing) return { ...b, x: existing.x, y: existing.y, width: existing.width, height: existing.height }
-      return b
-    })
-
+    nodes.value = result.nodes
+    boundaries.value = result.boundaries
     edges.value = result.edges
 
-    // Recalc all boundaries from leaf to root
+    // Recalc boundaries from leaf to root so their geometry tracks the
+    // (possibly user-saved) child node positions.
     for (const b of boundaries.value) {
       if (b.childBoundaryIds.length === 0) {
         recalcBoundary(b.id)
@@ -253,6 +259,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     boundaries,
     selectedNodeId,
     selectedNode,
+    routedEdges,
     getNodeById,
     getBoundaryById,
     updateFromSource,

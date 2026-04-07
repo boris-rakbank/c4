@@ -123,6 +123,16 @@ export function parseMermaid(source) {
   const startIdx = lines.findIndex(l => /^graph\s+(TD|TB|LR|RL|BT)/i.test(l))
   const contentLines = startIdx >= 0 ? lines.slice(startIdx + 1) : lines
 
+  // Pre-scan: collect saved node positions from `%% @pos id x y` comments.
+  // These override the default auto-layout for any node that has one.
+  const savedPositions = new Map()
+  for (const line of contentLines) {
+    const pm = line.match(/^%%\s*@pos\s+(\w+)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$/)
+    if (pm) {
+      savedPositions.set(pm[1], { x: parseFloat(pm[2]), y: parseFloat(pm[3]) })
+    }
+  }
+
   const edgePattern = /^(.+?)\s*(-{1,2}->|=+>|-.->)\s*(?:\|(.+?)\|\s*)?(.+)$/
   const edgeLabelBeforeArrow = /^(.+?)\s*--\s+(.+?)\s*-->\s*(.+)$/
 
@@ -286,7 +296,11 @@ export function parseMermaid(source) {
   // Build final nodes with absolute positions
   const nodes = nodeList.map(node => {
     let x, y
-    if (node._boundaryId && boundariesMap.has(node._boundaryId)) {
+    const saved = savedPositions.get(node.id)
+    if (saved) {
+      x = saved.x
+      y = saved.y
+    } else if (node._boundaryId && boundariesMap.has(node._boundaryId)) {
       const boundary = boundariesMap.get(node._boundaryId)
       x = (boundary._x || 40) + (node._localX || 0)
       y = (boundary._y || 40) + (node._localY || 0)

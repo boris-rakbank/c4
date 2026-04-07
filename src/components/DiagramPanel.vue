@@ -9,7 +9,7 @@ import C4Edge from './C4Edge.vue'
 const CANVAS_PADDING = 200
 
 const store = useDiagramStore()
-const { nodes, edges, boundaries } = storeToRefs(store)
+const { nodes, routedEdges, boundaries } = storeToRefs(store)
 const svgRef = ref(null)
 
 const canvasWidth = computed(() => {
@@ -77,9 +77,9 @@ const canvasHeight = computed(() => {
           :svg-ref="svgRef"
         />
 
-        <!-- Edges -->
+        <!-- Edges (orthogonal, A*-routed) -->
         <C4Edge
-          v-for="edge in edges"
+          v-for="edge in routedEdges"
           :key="edge.id"
           :edge="edge"
         />
