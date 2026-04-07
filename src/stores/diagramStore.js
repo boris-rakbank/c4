@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
+import { applyNodeStyle } from './sourceRewriter.js'
+import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 
 const BOUNDARY_PADDING = 30
 const BOUNDARY_TITLE_HEIGHT = 40
@@ -27,6 +29,29 @@ export const useDiagramStore = defineStore('diagram', () => {
   const nodes = ref([])
   const edges = ref([])
   const boundaries = ref([])
+  const selectedNodeId = ref(null)
+
+  const selectedNode = computed(() => {
+    if (!selectedNodeId.value) return null
+    return nodes.value.find(n => n.id === selectedNodeId.value) || null
+  })
+
+  function selectNode(id) {
+    selectedNodeId.value = id
+  }
+
+  function clearSelection() {
+    selectedNodeId.value = null
+  }
+
+  function setNodeStyle(id, { type, colorName }) {
+    const node = nodes.value.find(n => n.id === id)
+    if (!node) return
+    const nextType = type || node.type
+    const nextColor = colorName || (parseClassName(node.className)?.colorName) || DEFAULT_COLOR
+    const newSource = applyNodeStyle(mermaidSource.value, id, { type: nextType, colorName: nextColor })
+    updateFromSource(newSource)
+  }
 
   const getNodeById = computed(() => {
     const map = new Map(nodes.value.map(n => [n.id, n]))
@@ -226,12 +251,17 @@ export const useDiagramStore = defineStore('diagram', () => {
     nodes,
     edges,
     boundaries,
+    selectedNodeId,
+    selectedNode,
     getNodeById,
     getBoundaryById,
     updateFromSource,
     updateNodePosition,
     updateBoundaryPosition,
     finishDrag,
+    selectNode,
+    clearSelection,
+    setNodeStyle,
     init,
   }
 })

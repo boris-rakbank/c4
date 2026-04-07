@@ -4,6 +4,7 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { useDiagramStore } from './stores/diagramStore.js'
 import EditorPanel from './components/EditorPanel.vue'
 import DiagramPanel from './components/DiagramPanel.vue'
+import StylePanel from './components/StylePanel.vue'
 
 const store = useDiagramStore()
 onMounted(() => store.init())
@@ -17,7 +18,15 @@ onMounted(() => store.init())
       </SplitterPanel>
       <SplitterResizeHandle class="splitter-handle" />
       <SplitterPanel :default-size="65" :min-size="30" class="panel">
-        <DiagramPanel />
+        <SplitterGroup direction="vertical" class="splitter-group">
+          <SplitterPanel :default-size="67" :min-size="30" class="panel">
+            <DiagramPanel />
+          </SplitterPanel>
+          <SplitterResizeHandle class="splitter-handle vertical" />
+          <SplitterPanel :default-size="33" :min-size="15" class="panel">
+            <StylePanel />
+          </SplitterPanel>
+        </SplitterGroup>
       </SplitterPanel>
     </SplitterGroup>
   </div>
@@ -51,5 +60,11 @@ onMounted(() => store.init())
 .splitter-handle:hover,
 .splitter-handle:active {
   background: #94a3b8;
+}
+
+.splitter-handle.vertical {
+  width: 100%;
+  height: 6px;
+  cursor: row-resize;
 }
 </style>

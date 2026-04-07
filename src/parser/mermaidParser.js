@@ -296,7 +296,7 @@ export function parseMermaid(source) {
     }
     // Resolve classDef style for this node
     let nodeStyle = null
-    const assignedClass = classAssignments.get(node.id)
+    const assignedClass = classAssignments.get(node.id) || null
     if (assignedClass && classDefsMap.has(assignedClass)) {
       const cd = classDefsMap.get(assignedClass)
       nodeStyle = {
@@ -313,6 +313,7 @@ export function parseMermaid(source) {
       title: node.title,
       description: node.description,
       boundaryId: node._boundaryId || null,
+      className: assignedClass,
       style: nodeStyle,
       x, y,
       width: NODE_WIDTH,

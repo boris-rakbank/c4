@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useDiagramStore } from '../stores/diagramStore.js'
+import { COLORS, DEFAULT_COLOR } from '../styles/palette.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -8,32 +10,31 @@ const props = defineProps({
 })
 
 const store = useDiagramStore()
+const { selectedNodeId } = storeToRefs(store)
 const isDragging = ref(false)
+const didDrag = ref(false)
+const dragStart = ref({ x: 0, y: 0 })
 const dragOffset = ref({ x: 0, y: 0 })
+const DRAG_THRESHOLD = 3
 
-// Placeholder colors — user will customize later
-const C4_COLORS = {
-  person:       { fill: '#ffffff', stroke: '#3a7d28', text: '#3a7d28' },
-  system:       { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  container:    { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  database:     { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  s3:           { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  'server-app': { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  spa:          { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  directory:    { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  boundary:     { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-  aws:          { fill: '#ffffff', stroke: '#cc0000', text: '#cc0000' },
-  bus:          { fill: '#ffffff', stroke: '#1168bd', text: '#1168bd' },
-}
+const isSelected = computed(() => selectedNodeId.value === props.node.id)
 
 function getColors() {
-  const defaults = C4_COLORS[props.node.type] || C4_COLORS.system
+  // Default: blue palette, with `aws` defaulting to red and `person` to green
+  // (preserves visual continuity with the previous hardcoded defaults).
+  const typeDefault =
+    props.node.type === 'aws' ? COLORS.Red :
+    props.node.type === 'person' ? COLORS.Green :
+    COLORS[DEFAULT_COLOR]
+
   const s = props.node.style
-  if (!s) return defaults
+  if (!s) {
+    return { fill: typeDefault.fill, stroke: typeDefault.color, text: typeDefault.stroke }
+  }
   return {
-    fill: s.fill || 'transparent',       // background
-    stroke: s.color || defaults.stroke,   // frame/border color
-    text: s.stroke || defaults.text,      // font/text color
+    fill: s.fill || 'transparent',         // background
+    stroke: s.color || typeDefault.color,  // frame/border color
+    text: s.stroke || typeDefault.stroke,  // font/text color
   }
 }
 
@@ -63,17 +64,28 @@ function toSvgPoint(clientX, clientY) {
 
 function onPointerDown(e) {
   isDragging.value = true
+  didDrag.value = false
   const svgPt = toSvgPoint(e.clientX, e.clientY)
+  dragStart.value = { x: svgPt.x, y: svgPt.y }
   dragOffset.value = {
     x: svgPt.x - props.node.x,
     y: svgPt.y - props.node.y,
   }
-  e.target.setPointerCapture(e.pointerId)
+  // Capture on the <g> (currentTarget), not the inner shape, so pointerup
+  // reliably fires on this same element.
+  try { e.currentTarget.setPointerCapture(e.pointerId) } catch (_) {}
+  e.stopPropagation()
 }
 
 function onPointerMove(e) {
   if (!isDragging.value) return
   const svgPt = toSvgPoint(e.clientX, e.clientY)
+  if (!didDrag.value) {
+    const dx = svgPt.x - dragStart.value.x
+    const dy = svgPt.y - dragStart.value.y
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    didDrag.value = true
+  }
   store.updateNodePosition(
     props.node.id,
     svgPt.x - dragOffset.value.x,
@@ -81,9 +93,15 @@ function onPointerMove(e) {
   )
 }
 
-function onPointerUp() {
+function onPointerUp(e) {
+  if (!isDragging.value) return
   isDragging.value = false
-  store.finishDrag()
+  if (didDrag.value) {
+    store.finishDrag()
+  } else {
+    store.selectNode(props.node.id)
+    e.stopPropagation()
+  }
 }
 
 // Text Y offset: how far down the first text line starts inside the shape
@@ -101,11 +119,24 @@ function textStartY() {
   <g
     :transform="`translate(${node.x}, ${node.y})`"
     class="c4-node"
-    :class="{ dragging: isDragging }"
+    :class="{ dragging: isDragging, selected: isSelected }"
     @pointerdown.prevent="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
   >
+    <!-- Selection halo -->
+    <rect
+      v-if="isSelected"
+      x="-8" y="-8"
+      :width="w + 16"
+      :height="h + 16"
+      rx="10"
+      fill="none"
+      stroke="#3b82f6"
+      stroke-width="2"
+      stroke-dasharray="6 4"
+    />
+
     <!-- ==================== PERSON ==================== -->
     <!-- Circle head on top, body shape below (matching C4 person icon) -->
     <template v-if="node.type === 'person'">

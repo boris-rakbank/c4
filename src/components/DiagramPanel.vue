@@ -49,6 +49,7 @@ const canvasHeight = computed(() => {
         :width="canvasWidth"
         :height="canvasHeight"
         xmlns="http://www.w3.org/2000/svg"
+        @pointerdown.self="store.clearSelection()"
       >
         <defs>
           <marker
@@ -66,7 +67,7 @@ const canvasHeight = computed(() => {
           </pattern>
         </defs>
 
-        <rect width="100%" height="100%" fill="url(#grid)" />
+        <rect width="100%" height="100%" fill="url(#grid)" @pointerdown="store.clearSelection()" />
 
         <!-- Boundaries rendered first (behind nodes) -->
         <C4Boundary
