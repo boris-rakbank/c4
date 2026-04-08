@@ -145,6 +145,76 @@ export function setNodePositions(source, positions) {
 }
 
 /**
+ * Replace all `%% @edge <id> out <side>:<frac> path <x,y> <x,y> ... in <side>:<frac>`
+ * comments with a fresh set, one per edge in `routes`.
+ *
+ * `routes` is a plain object keyed by edgeId (`${fromId}-${toId}`), shape:
+ *   { slotOut: { side, fraction }, slotIn: { side, fraction }, points: [{x,y},...] }
+ *
+ * Each comment is inserted on the line immediately above the matching edge
+ * line in the source, mirroring how `setNodePositions` places `@pos` comments.
+ * Stale comments for edges no longer present are stripped.
+ */
+export function setEdgeRoutes(source, routes) {
+  // Normalize input to a Map for mutation as we consume entries.
+  const map = routes instanceof Map
+    ? new Map(routes)
+    : new Map(Object.entries(routes))
+
+  // Step 1: strip every existing %% @edge line.
+  const lines = source.split('\n').filter(l => !/^\s*%%\s*@edge\s+/.test(l))
+
+  const fmtFrac = f => (Math.round(f * 1000) / 1000).toString()
+  const fmtPt = p => `${Math.round(p.x)},${Math.round(p.y)}`
+
+  const buildComment = (indent, edgeId, r) => {
+    const out = `${r.slotOut.side}:${fmtFrac(r.slotOut.fraction)}`
+    const inn = `${r.slotIn.side}:${fmtFrac(r.slotIn.fraction)}`
+    const path = r.points.map(fmtPt).join(' ')
+    return `${indent}%% @edge ${edgeId} out ${out} path ${path} in ${inn}`
+  }
+
+  // Edge line patterns (mirrors mermaidParser.js):
+  //   "A -->|label| B"   /  "A --> B"   /   "A -- label --> B"
+  // We extract from-id and to-id and look up `${from}-${to}` in routes.
+  const edgePattern = /^(\w+)\s*(?:-{1,2}->|=+>|-\.->)\s*(?:\|.+?\|\s*)?(\w+)/
+  const labelBeforeArrow = /^(\w+)\s*--\s+.+?\s*-->\s*(\w+)/
+  const indentRe = /^(\s*)/
+
+  // Step 2: walk lines; when we find an edge line whose `${from}-${to}` is in
+  // the route map, insert the comment immediately above it.
+  const out = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed && !trimmed.startsWith('%%')) {
+      let m = trimmed.match(labelBeforeArrow) || trimmed.match(edgePattern)
+      if (m) {
+        const edgeId = `${m[1]}-${m[2]}`
+        const r = map.get(edgeId)
+        if (r && r.slotOut && r.slotIn && r.points) {
+          const indent = (line.match(indentRe) || ['', ''])[1]
+          out.push(buildComment(indent, edgeId, r))
+          map.delete(edgeId)
+        }
+      }
+    }
+    out.push(line)
+  }
+
+  // Step 3: any remaining edges (no matching line found — should be rare)
+  // get appended at the end so the metadata isn't silently lost.
+  if (map.size > 0) {
+    while (out.length && out[out.length - 1].trim() === '') out.pop()
+    for (const [edgeId, r] of map) {
+      if (!r || !r.slotOut || !r.slotIn || !r.points) continue
+      out.push(buildComment('    ', edgeId, r))
+    }
+  }
+
+  return out.join('\n')
+}
+
+/**
  * Drop any `classDef X ...` line where no `class ... X` line references it.
  * Keeps the lazy invariant: removed/changed assignments don't leave dead defs.
  */

@@ -37,11 +37,35 @@ const canvasHeight = computed(() => {
   }
   return Math.max(maxB + CANVAS_PADDING, 800)
 })
+
+function downloadSvg() {
+  const svg = svgRef.value
+  if (!svg) return
+  // Clone so we can safely add the xmlns attributes the standalone file
+  // needs without polluting the live DOM.
+  const clone = svg.cloneNode(true)
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  const source = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    new XMLSerializer().serializeToString(clone)
+  const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'c4-diagram.svg'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
   <div class="diagram-panel">
-    <div class="diagram-header">C4 Diagram</div>
+    <div class="diagram-header">
+      <span>C4 Diagram</span>
+      <button class="download-btn" @click="downloadSvg">Download SVG</button>
+    </div>
     <div class="diagram-canvas">
       <svg
         ref="svgRef"
@@ -105,6 +129,9 @@ const canvasHeight = computed(() => {
 }
 
 .diagram-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 16px;
   font-size: 12px;
   font-weight: 600;
@@ -113,6 +140,23 @@ const canvasHeight = computed(() => {
   color: #64748b;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
+}
+
+.download-btn {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 4px 10px;
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.download-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
 }
 
 .diagram-canvas {

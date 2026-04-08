@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
-import { applyNodeStyle, setNodePositions } from './sourceRewriter.js'
+import { applyNodeStyle, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 import { routeAllEdges } from '../routing/orthogonalRouter.js'
 
@@ -68,7 +68,15 @@ export const useDiagramStore = defineStore('diagram', () => {
   // so dragging a node reroutes connected edges automatically.
   const routedEdges = computed(() => {
     const routes = routeAllEdges(nodes.value, edges.value)
-    return edges.value.map(e => ({ ...e, points: routes.get(e.id) || null }))
+    return edges.value.map(e => {
+      const r = routes.get(e.id)
+      return {
+        ...e,
+        points:  r?.points  || null,
+        slotOut: r?.slotOut || null,
+        slotIn:  r?.slotIn  || null,
+      }
+    })
   })
 
   // Get all nodes that belong to a boundary (direct children)
@@ -193,6 +201,7 @@ export const useDiagramStore = defineStore('diagram', () => {
   function finishDrag() {
     normalizePositions()
     persistPositionsToSource()
+    persistEdgeRoutesToSource()
   }
 
   function persistPositionsToSource() {
@@ -201,6 +210,19 @@ export const useDiagramStore = defineStore('diagram', () => {
       positions[n.id] = { x: n.x, y: n.y }
     }
     mermaidSource.value = setNodePositions(mermaidSource.value, positions)
+  }
+
+  function persistEdgeRoutesToSource() {
+    const routes = {}
+    for (const e of routedEdges.value) {
+      if (!e.points || !e.slotOut || !e.slotIn) continue
+      routes[e.id] = {
+        slotOut: e.slotOut,
+        slotIn:  e.slotIn,
+        points:  e.points,
+      }
+    }
+    mermaidSource.value = setEdgeRoutes(mermaidSource.value, routes)
   }
 
   function moveChildBoundaries(parentId, dx, dy) {

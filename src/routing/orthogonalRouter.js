@@ -9,8 +9,12 @@ const CELL = 20            // grid cell size, matches DiagramPanel grid pattern
 const PADDING_CELLS = 1    // inflate every node obstacle by N cells
 const MARGIN = CELL * 4    // margin around the bounding box of all nodes
 const TURN_PENALTY = 5     // extra cost when A* changes direction
-const ENDPOINT_GAP = 12    // px to push the line endpoint outside the node so
-                           // the arrow head sits in clear space, not under the node
+const STUB_LENGTH = 24     // px — minimum straight segment perpendicular to
+                           // the node side, both leaving source and entering
+                           // target. The polyline still terminates on the
+                           // perimeter (so the arrow tip touches the node),
+                           // but A* routes between "stub" points offset
+                           // outward, guaranteeing this straight approach.
 
 // Direction vectors: 0=right, 1=down, 2=left, 3=up
 const DIRS = [
@@ -153,39 +157,50 @@ function withNodeUnblocked(grid, node, fn) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Endpoint selection
 // ─────────────────────────────────────────────────────────────────────────────
-export function chooseEndpoints(fromNode, toNode) {
-  const fcx = fromNode.x + fromNode.width  / 2
-  const fcy = fromNode.y + fromNode.height / 2
-  const tcx = toNode.x   + toNode.width    / 2
-  const tcy = toNode.y   + toNode.height   / 2
-  const dx = tcx - fcx
-  const dy = tcy - fcy
+function nodeCenter(node) {
+  return { x: node.x + node.width / 2, y: node.y + node.height / 2 }
+}
 
-  let startSide, endSide
+// Pick which side of source / target each edge should attach to, based on the
+// center-to-center vector's dominant axis.
+export function pickSides(fromNode, toNode) {
+  const f = nodeCenter(fromNode)
+  const t = nodeCenter(toNode)
+  const dx = t.x - f.x
+  const dy = t.y - f.y
+
   if (Math.abs(dx) >= Math.abs(dy)) {
-    // Horizontal dominance
-    startSide = dx >= 0 ? 'right' : 'left'
-    endSide   = dx >= 0 ? 'left'  : 'right'
-  } else {
-    // Vertical dominance
-    startSide = dy >= 0 ? 'bottom' : 'top'
-    endSide   = dy >= 0 ? 'top'    : 'bottom'
+    return {
+      startSide: dx >= 0 ? 'right' : 'left',
+      endSide:   dx >= 0 ? 'left'  : 'right',
+    }
   }
-
   return {
-    start:    sidePoint(fromNode, startSide),
-    end:      sidePoint(toNode,   endSide),
+    startSide: dy >= 0 ? 'bottom' : 'top',
+    endSide:   dy >= 0 ? 'top'    : 'bottom',
+  }
+}
+
+export function chooseEndpoints(fromNode, toNode) {
+  const { startSide, endSide } = pickSides(fromNode, toNode)
+  return {
+    start:    sidePointAt(fromNode, startSide, 0.5),
+    end:      sidePointAt(toNode,   endSide,   0.5),
     startDir: sideDir(startSide),
     endDir:   sideDir(endSide), // direction the arrow should approach FROM
   }
 }
 
-function sidePoint(node, side) {
+// Return a point on `side` of `node`, at `fraction` (0..1) along that side.
+// For horizontal sides (top/bottom) the fraction runs along X (0 = left edge,
+// 1 = right edge). For vertical sides (left/right) it runs along Y.
+function sidePointAt(node, side, fraction) {
+  const f = Math.max(0, Math.min(1, fraction))
   switch (side) {
-    case 'right':  return { x: node.x + node.width,     y: node.y + node.height / 2 }
-    case 'left':   return { x: node.x,                  y: node.y + node.height / 2 }
-    case 'top':    return { x: node.x + node.width / 2, y: node.y }
-    case 'bottom': return { x: node.x + node.width / 2, y: node.y + node.height }
+    case 'right':  return { x: node.x + node.width,       y: node.y + node.height * f }
+    case 'left':   return { x: node.x,                    y: node.y + node.height * f }
+    case 'top':    return { x: node.x + node.width * f,   y: node.y }
+    case 'bottom': return { x: node.x + node.width * f,   y: node.y + node.height }
   }
 }
 
@@ -201,7 +216,7 @@ function sideDir(side) {
 // ─────────────────────────────────────────────────────────────────────────────
 // A*
 // ─────────────────────────────────────────────────────────────────────────────
-function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx) {
+function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx, goalDirIdx) {
   const cols = grid.cols
   const rows = grid.rows
 
@@ -224,7 +239,8 @@ function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx) {
 
   while (heap.size > 0) {
     const cur = heap.pop()
-    if (cur.cx === goalCx && cur.cy === goalCy) {
+    if (cur.cx === goalCx && cur.cy === goalCy &&
+        (goalDirIdx == null || cur.d === goalDirIdx)) {
       // Reconstruct path
       const path = []
       let key = stateKey(cur.cx, cur.cy, cur.d)
@@ -356,37 +372,53 @@ function lShape(start, end, startDir) {
 // Public: route a single edge
 // ─────────────────────────────────────────────────────────────────────────────
 export function routeOrthogonal(grid, start, end, startDir, endDir) {
-  const { cx: scx, cy: scy } = grid.toCell(start.x, start.y)
-  const { cx: gcx, cy: gcy } = grid.toCell(end.x,   end.y)
+  // Route A* between "stub" points offset outside each node along the side
+  // normal. The actual perimeter points (`start`, `end`) are prepended /
+  // appended afterwards, so the polyline still terminates on the node edge
+  // (arrow tip touches the node) but is guaranteed to have a straight
+  // perpendicular stub of length STUB_LENGTH at each end.
+  const startStub = {
+    x: start.x + startDir.dx * STUB_LENGTH,
+    y: start.y + startDir.dy * STUB_LENGTH,
+  }
+  const endStub = {
+    x: end.x + endDir.dx * STUB_LENGTH,
+    y: end.y + endDir.dy * STUB_LENGTH,
+  }
+
+  const { cx: scx, cy: scy } = grid.toCell(startStub.x, startStub.y)
+  const { cx: gcx, cy: gcy } = grid.toCell(endStub.x,   endStub.y)
 
   if (!grid.inBounds(scx, scy) || !grid.inBounds(gcx, gcy)) {
     return lShape(start, end, startDir)
   }
 
-  const path = aStar(grid, scx, scy, gcx, gcy, dirIndex(startDir.dx, startDir.dy))
+  const startDirIdx = dirIndex(startDir.dx, startDir.dy)
+  // Force A* to arrive at the goal stub from the direction opposite to
+  // endDir (endDir is the outward normal of the target's entry side, so
+  // the approach direction is its inverse). This guarantees the final
+  // segment is perpendicular to the target side — a clean Z-shape rather
+  // than a bend that slams into the node from the wrong side.
+  const goalDirIdx = dirIndex(-endDir.dx, -endDir.dy)
+  let path = aStar(grid, scx, scy, gcx, gcy, startDirIdx, goalDirIdx)
+  // Fallback: if the strict entry direction is unreachable, relax the
+  // constraint.
+  if (!path || path.length === 0) {
+    path = aStar(grid, scx, scy, gcx, gcy, startDirIdx)
+  }
   if (!path || path.length === 0) {
     return lShape(start, end, startDir)
   }
 
   const corners = simplify(path)
-  // Convert grid cells to absolute coords, then align first/last segments to
-  // the exact perimeter points using axis-aligned joiners so we never produce
-  // a diagonal stub.
+  // Convert grid cells to absolute coords, align first/last segments to the
+  // exact stub points (to kill any diagonal caused by grid rounding), then
+  // prepend the perimeter start and append the perimeter end.
   let pts = corners.map(c => grid.toAbs(c.cx, c.cy))
-  // Push endpoints OUT of the node along the side normal so the arrow head
-  // renders in free space rather than under the next node.
-  const startOut = {
-    x: start.x + startDir.dx * ENDPOINT_GAP,
-    y: start.y + startDir.dy * ENDPOINT_GAP,
-  }
-  // endDir is the outward normal of the target's entry side (e.g. {-1,0} for
-  // left side), so adding it pushes the endpoint OUT of the node.
-  const endOut = {
-    x: end.x + endDir.dx * ENDPOINT_GAP,
-    y: end.y + endDir.dy * ENDPOINT_GAP,
-  }
-  pts = alignFirst(pts, startOut, startDir)
-  pts = alignLast(pts, endOut, endDir)
+  pts = alignFirst(pts, startStub, startDir)
+  pts = alignLast(pts, endStub, endDir)
+  pts.unshift({ x: start.x, y: start.y })
+  pts.push({ x: end.x, y: end.y })
   pts = simplifyAbs(pts)
   return pts
 }
@@ -401,19 +433,71 @@ export function routeAllEdges(nodes, edges) {
   const nodeById = new Map(nodes.map(n => [n.id, n]))
   const grid = buildObstacleGrid(nodes)
 
+  // ── Pass 1: pick sides, collect per-(node, side) groups ───────────────────
+  // groups: Map<`${nodeId}|${side}`, Array<{ edgeId, otherCenter }>>
+  const groups = new Map()
+  const edgeMeta = new Map() // edgeId → { from, to, startSide, endSide }
+
+  const addToGroup = (nodeId, side, edgeId, otherCenter) => {
+    const key = `${nodeId}|${side}`
+    let arr = groups.get(key)
+    if (!arr) { arr = []; groups.set(key, arr) }
+    arr.push({ edgeId, otherCenter })
+  }
+
   for (const edge of edges) {
     const from = nodeById.get(edge.from)
     const to   = nodeById.get(edge.to)
     if (!from || !to) continue
+    const { startSide, endSide } = pickSides(from, to)
+    edgeMeta.set(edge.id, { from, to, startSide, endSide })
+    addToGroup(from.id, startSide, edge.id, nodeCenter(to))
+    addToGroup(to.id,   endSide,   edge.id, nodeCenter(from))
+  }
 
-    const { start, end, startDir, endDir } = chooseEndpoints(from, to)
+  // ── Assign slot fractions within each group ───────────────────────────────
+  // slotFor: Map<`${edgeId}|${role}`, fraction>  (role = 'start' | 'end')
+  // We key by nodeId+side to keep source/target slots separate even when the
+  // same edge appears in two groups.
+  const slotFor = new Map()
+  for (const [key, arr] of groups) {
+    const [, side] = key.split('|')
+    const horizontal = side === 'top' || side === 'bottom'
+    arr.sort((a, b) =>
+      horizontal ? a.otherCenter.x - b.otherCenter.x
+                 : a.otherCenter.y - b.otherCenter.y
+    )
+    const n = arr.length
+    for (let i = 0; i < n; i++) {
+      const fraction = (i + 1) / (n + 1)
+      slotFor.set(`${arr[i].edgeId}|${key}`, fraction)
+    }
+  }
 
-    const pts = withNodeUnblocked(grid, from, () =>
+  // ── Pass 2: route each edge with its slotted attachment points ────────────
+  for (const edge of edges) {
+    const meta = edgeMeta.get(edge.id)
+    if (!meta) continue
+    const { from, to, startSide, endSide } = meta
+
+    const startFrac = slotFor.get(`${edge.id}|${from.id}|${startSide}`) ?? 0.5
+    const endFrac   = slotFor.get(`${edge.id}|${to.id}|${endSide}`)   ?? 0.5
+
+    const start    = sidePointAt(from, startSide, startFrac)
+    const end      = sidePointAt(to,   endSide,   endFrac)
+    const startDir = sideDir(startSide)
+    const endDir   = sideDir(endSide)
+
+    const points = withNodeUnblocked(grid, from, () =>
       withNodeUnblocked(grid, to, () =>
         routeOrthogonal(grid, start, end, startDir, endDir)
       )
     )
-    out.set(edge.id, pts)
+    out.set(edge.id, {
+      points,
+      slotOut: { side: startSide, fraction: startFrac },
+      slotIn:  { side: endSide,   fraction: endFrac },
+    })
   }
 
   return out
