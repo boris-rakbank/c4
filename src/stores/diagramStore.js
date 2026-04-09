@@ -5,6 +5,7 @@ import { convertSequenceToGraph } from '../parser/sequenceConverter.js'
 import { applyNodeStyle, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 import { routeAllEdges } from '../routing/orthogonalRouter.js'
+import { applyForceLayout } from '../layout/forceLayout.js'
 
 const BOUNDARY_PADDING = 30
 const BOUNDARY_TITLE_HEIGHT = 40
@@ -283,6 +284,156 @@ export const useDiagramStore = defineStore('diagram', () => {
     normalizePositions()
   }
 
+  // Fruchterman–Reingold force-directed auto-layout with grid snap.
+  // Invoked on demand from the UI (toolbar button) — never
+  // automatically.
+  //
+  // Two-pass layout:
+  //   Pass 1 — for each root-level boundary, run the physics on
+  //            just its descendants (using only intra-group edges);
+  //            unparented nodes are force-laid-out together as one
+  //            virtual group. This gives each group a compact
+  //            internal layout without inter-group interference.
+  //   Pass 2 — pack the groups (root boundaries + unparented nodes)
+  //            in a tight row/column grid with fixed gaps: at most
+  //            1/2 × NODE_WIDTH horizontally and 1/2 × NODE_HEIGHT
+  //            vertically between adjacent groups. Each group's
+  //            contents translate together via the existing
+  //            updateBoundaryPosition / updateNodePosition helpers.
+  //
+  // Snapped positions are written back to the source as `%% @pos`
+  // comments so they survive a re-parse.
+  function runForceLayout() {
+    if (nodes.value.length === 0) return
+
+    // ── Pass 1 — per-group internal force layout ────────────────────
+    runPerGroupInternalLayoutPass()
+
+    // Recalc all boundary bounds from the new child positions so
+    // Pass 2 sees accurate group sizes.
+    for (const b of boundaries.value) {
+      if (b.childBoundaryIds.length === 0) recalcBoundary(b.id)
+    }
+
+    // ── Pass 2 — pack groups with fixed small gaps ──────────────────
+    runGroupPackingPass()
+
+    normalizePositions()
+    persistPositionsToSource()
+    persistEdgeRoutesToSource()
+  }
+
+  // All node descendants of `boundaryId`, including nodes inside
+  // nested child boundaries (flattened). Used to relax a whole root
+  // group in one force-layout call.
+  function getAllDescendantNodes(boundaryId) {
+    const result = []
+    const walk = (bid) => {
+      for (const n of nodes.value) if (n.boundaryId === bid) result.push(n)
+      for (const b of boundaries.value) if (b.parentId === bid) walk(b.id)
+    }
+    walk(boundaryId)
+    return result
+  }
+
+  function runPerGroupInternalLayoutPass() {
+    const relaxGroup = (groupNodes) => {
+      if (groupNodes.length < 2) return
+      const idSet = new Set(groupNodes.map(n => n.id))
+      const internalEdges = edges.value.filter(e => idSet.has(e.from) && idSet.has(e.to))
+      const k = Math.ceil(Math.sqrt(groupNodes.length))
+      // Virtual canvas sized for this single group.
+      const side = Math.max(1200, k * 520)
+      const result = applyForceLayout({
+        nodes: groupNodes,
+        edges: internalEdges,
+        canvas: { width: side, height: Math.round(side * 0.45) },
+        gridSize: GRID_SIZE,
+        directed: true,
+      })
+      const posById = new Map(result.map(r => [r.id, r]))
+      for (const n of groupNodes) {
+        const p = posById.get(n.id)
+        if (p) { n.x = p.x; n.y = p.y }
+      }
+    }
+
+    // Relax each root boundary's descendants (flattened).
+    for (const b of boundaries.value) {
+      if (b.parentId) continue
+      relaxGroup(getAllDescendantNodes(b.id))
+    }
+    // Relax unparented nodes as a single virtual group.
+    relaxGroup(nodes.value.filter(n => !n.boundaryId))
+  }
+
+  function runGroupPackingPass() {
+    // NODE_WIDTH = 200, NODE_HEIGHT = 120 (mermaidParser.js constants).
+    // Fixed inter-group gaps as specified: 1/2 × component size.
+    const H_GAP = 100
+    const V_GAP = 60
+
+    // Build the packable items: each root boundary and each
+    // unparented node is one item.
+    const items = []
+    for (const b of boundaries.value) {
+      if (b.parentId) continue
+      items.push({
+        x: b.x, y: b.y, width: b.width, height: b.height,
+        refBoundary: b,
+      })
+    }
+    for (const n of nodes.value) {
+      if (n.boundaryId) continue
+      items.push({
+        x: n.x, y: n.y, width: n.width, height: n.height,
+        refNode: n,
+      })
+    }
+    if (items.length === 0) return
+
+    // Sort into reading order: group by y-band (of average item
+    // height), then by x. This preserves rough relative ordering
+    // from whatever layout preceded the pack (manual, parser auto,
+    // or a previous Auto Layout click) — connected groups that
+    // clustered in pass 1 tend to pack next to each other.
+    const avgH = items.reduce((s, i) => s + i.height, 0) / items.length
+    items.sort((a, b) => {
+      const ay = Math.floor((a.y + a.height / 2) / avgH)
+      const by = Math.floor((b.y + b.height / 2) / avgH)
+      if (ay !== by) return ay - by
+      return (a.x + a.width / 2) - (b.x + b.width / 2)
+    })
+
+    // Wrap row width: target a roughly square overall block.
+    const maxItemW = items.reduce((m, i) => Math.max(m, i.width), 0)
+    const k = Math.ceil(Math.sqrt(items.length))
+    const maxRowWidth = Math.max(1800, k * (maxItemW + H_GAP))
+
+    let cursorX = MIN_MARGIN
+    let cursorY = MIN_MARGIN
+    let rowHeight = 0
+
+    for (const item of items) {
+      // Wrap to next row if adding this item would overflow.
+      if (cursorX > MIN_MARGIN && cursorX + item.width > maxRowWidth) {
+        cursorX = MIN_MARGIN
+        cursorY += rowHeight + V_GAP
+        rowHeight = 0
+      }
+      // Snap cursor to grid so `%% @pos` values come out clean.
+      const targetX = snapToGrid(cursorX)
+      const targetY = snapToGrid(cursorY)
+      if (item.refBoundary) {
+        updateBoundaryPosition(item.refBoundary.id, targetX, targetY)
+      } else if (item.refNode) {
+        updateNodePosition(item.refNode.id, targetX, targetY)
+      }
+      cursorX += item.width + H_GAP
+      if (item.height > rowHeight) rowHeight = item.height
+    }
+  }
+
   // Hard-snap the last-dragged element to the nearest gridline. Called
   // from component pointer-up handlers before finishDrag so the
   // persisted positions are always grid-aligned, regardless of whether
@@ -356,6 +507,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     selectNode,
     clearSelection,
     setNodeStyle,
+    runForceLayout,
     snapActivePosition,
     promptSequenceConversion,
     confirmSequenceConversion,

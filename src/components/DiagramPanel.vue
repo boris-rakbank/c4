@@ -71,7 +71,23 @@ function downloadSvg() {
   <div class="diagram-panel">
     <div class="diagram-header">
       <span>C4 Diagram</span>
-      <button class="download-btn" @click="downloadSvg">Download SVG</button>
+      <div class="header-actions">
+        <button class="toolbar-btn" @click="store.runForceLayout" title="Run force-directed auto-layout">Auto Layout</button>
+        <button class="toolbar-btn" @click="downloadSvg">Download SVG</button>
+        <a
+          class="toolbar-link"
+          href="https://go-teal.github.io/"
+          target="_blank"
+          rel="noopener"
+          title="go-teal — set of related projects"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </a>
+      </div>
     </div>
     <div class="diagram-canvas">
       <svg
@@ -150,7 +166,12 @@ function downloadSvg() {
   border-bottom: 1px solid #e2e8f0;
 }
 
-.download-btn {
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar-btn {
   font: inherit;
   text-transform: none;
   letter-spacing: normal;
@@ -162,9 +183,29 @@ function downloadSvg() {
   cursor: pointer;
 }
 
-.download-btn:hover {
+.toolbar-btn:hover {
   background: #f1f5f9;
   border-color: #94a3b8;
+}
+
+.toolbar-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.toolbar-link:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f766e;
 }
 
 .diagram-canvas {
