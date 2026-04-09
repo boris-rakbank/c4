@@ -113,6 +113,7 @@ function onPointerUp(e) {
   if (!isDragging.value) return
   isDragging.value = false
   if (didDrag.value) {
+    store.snapActivePosition(props.node.id, 'node')
     store.finishDrag()
   } else {
     store.selectNode(props.node.id)

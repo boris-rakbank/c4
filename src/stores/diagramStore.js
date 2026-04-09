@@ -133,6 +133,18 @@ export const useDiagramStore = defineStore('diagram', () => {
   }
 
   const MIN_MARGIN = 20
+  const GRID_SIZE = 50     // px — snap grid spacing (~1/4 of NODE_WIDTH)
+  const SNAP_MAGNET = 12   // px — pull radius during drag
+
+  function snapToGrid(v) {
+    return Math.round(v / GRID_SIZE) * GRID_SIZE
+  }
+  // Soft snap: only pull to the grid when within SNAP_MAGNET pixels of
+  // a gridline; outside that radius the raw value passes through.
+  function magnetSnap(v) {
+    const g = snapToGrid(v)
+    return Math.abs(g - v) <= SNAP_MAGNET ? g : v
+  }
 
   // Shift all elements so the topmost/leftmost is at MIN_MARGIN (removes dead space)
   function normalizePositions() {
@@ -168,8 +180,10 @@ export const useDiagramStore = defineStore('diagram', () => {
   function updateNodePosition(id, x, y) {
     const node = nodes.value.find(n => n.id === id)
     if (node) {
-      node.x = Math.max(MIN_MARGIN, x)
-      node.y = Math.max(MIN_MARGIN, y)
+      // Clamp first so MIN_MARGIN always wins at the top-left edge,
+      // then magnetic-snap so values near a gridline stick to it.
+      node.x = magnetSnap(Math.max(MIN_MARGIN, x))
+      node.y = magnetSnap(Math.max(MIN_MARGIN, y))
       // Auto-resize parent boundary
       if (node.boundaryId) {
         recalcBoundary(node.boundaryId)
@@ -181,8 +195,8 @@ export const useDiagramStore = defineStore('diagram', () => {
     const boundary = boundaries.value.find(b => b.id === id)
     if (!boundary) return
 
-    const clampedX = Math.max(MIN_MARGIN, x)
-    const clampedY = Math.max(MIN_MARGIN, y)
+    const clampedX = magnetSnap(Math.max(MIN_MARGIN, x))
+    const clampedY = magnetSnap(Math.max(MIN_MARGIN, y))
     const dx = clampedX - boundary.x
     const dy = clampedY - boundary.y
 
@@ -268,6 +282,22 @@ export const useDiagramStore = defineStore('diagram', () => {
     normalizePositions()
   }
 
+  // Hard-snap the last-dragged element to the nearest gridline. Called
+  // from component pointer-up handlers before finishDrag so the
+  // persisted positions are always grid-aligned, regardless of whether
+  // the magnetic snap kicked in during the drag.
+  function snapActivePosition(id, kind) {
+    if (kind === 'node') {
+      const n = nodes.value.find(nn => nn.id === id)
+      if (!n) return
+      updateNodePosition(id, snapToGrid(n.x), snapToGrid(n.y))
+    } else if (kind === 'boundary') {
+      const b = boundaries.value.find(bb => bb.id === id)
+      if (!b) return
+      updateBoundaryPosition(id, snapToGrid(b.x), snapToGrid(b.y))
+    }
+  }
+
   function promptSequenceConversion(pastedText) {
     previousSourceBeforePaste.value = mermaidSource.value
     pendingSequenceSource.value = pastedText
@@ -325,6 +355,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     selectNode,
     clearSelection,
     setNodeStyle,
+    snapActivePosition,
     promptSequenceConversion,
     confirmSequenceConversion,
     cancelSequenceConversion,

@@ -41,11 +41,18 @@ const canvasHeight = computed(() => {
 function downloadSvg() {
   const svg = svgRef.value
   if (!svg) return
-  // Clone so we can safely add the xmlns attributes the standalone file
-  // needs without polluting the live DOM.
+  // Clone so we can safely mutate (strip grid, add xmlns) without
+  // polluting the live DOM.
   const clone = svg.cloneNode(true)
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  // Drop the grid — both the <pattern> def and the background <rect>
+  // that fills with it — so the exported file shows only the diagram.
+  const gridPattern = clone.querySelector('#grid')
+  if (gridPattern) gridPattern.remove()
+  for (const rect of clone.querySelectorAll('rect[fill="url(#grid)"]')) {
+    rect.remove()
+  }
   const source = '<?xml version="1.0" encoding="UTF-8"?>\n' +
     new XMLSerializer().serializeToString(clone)
   const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' })
@@ -86,8 +93,9 @@ function downloadSvg() {
           >
             <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
           </marker>
-          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f1f5f9" stroke-width="0.5" />
+          <!-- Snap-target dots at each 50px intersection -->
+          <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+            <circle cx="0" cy="0" r="1.5" fill="#cbd5e1" />
           </pattern>
         </defs>
 

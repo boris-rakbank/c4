@@ -358,6 +358,26 @@ function alignLast(pts, end, dir) {
   return pts
 }
 
+// Fixed rectangular self-loop on the right side of `node`.
+// The loop exits the top side at `topFrac` (default 0.75), travels up,
+// out to the right past the node, down to below the node, then back in
+// to the bottom side at `bottomFrac`. Looks like a C-shape wrapped
+// around the right edge — the classic self-loop shape.
+function buildSelfLoop(node, topFrac = 0.75, bottomFrac = 0.75) {
+  const D = 30 // how far outside the node the loop bends travel
+  const x = node.x, y = node.y, w = node.width, h = node.height
+  const topX    = x + w * topFrac
+  const bottomX = x + w * bottomFrac
+  return [
+    { x: topX,       y: y         },   // start at top side
+    { x: topX,       y: y - D     },   // up
+    { x: x + w + D,  y: y - D     },   // right past the node
+    { x: x + w + D,  y: y + h + D },   // down past the node
+    { x: bottomX,    y: y + h + D },   // back left
+    { x: bottomX,    y: y + h     },   // end at bottom side
+  ]
+}
+
 // L-shape fallback: 2 segments meeting at a corner.
 function lShape(start, end, startDir) {
   // If exit is horizontal, corner = (end.x, start.y); else (start.x, end.y)
@@ -449,6 +469,21 @@ export function routeAllEdges(nodes, edges) {
     const from = nodeById.get(edge.from)
     const to   = nodeById.get(edge.to)
     if (!from || !to) continue
+    // Self-loops get a fixed rectangular loop shape on the right side of
+    // the node — A* cannot route source === target cleanly (every A*
+    // cell pair degenerates), and pickSides' center-to-center vector is
+    // zero. Fixed sides (top → bottom) let the normal label placement
+    // and the per-side slot distribution still work.
+    if (from === to) {
+      edgeMeta.set(edge.id, {
+        from, to,
+        startSide: 'top', endSide: 'bottom',
+        selfLoop: true,
+      })
+      addToGroup(from.id, 'top',    edge.id, { x: from.x + from.width, y: from.y - 1 })
+      addToGroup(from.id, 'bottom', edge.id, { x: from.x + from.width, y: from.y + from.height + 1 })
+      continue
+    }
     const { startSide, endSide } = pickSides(from, to)
     edgeMeta.set(edge.id, { from, to, startSide, endSide })
     addToGroup(from.id, startSide, edge.id, nodeCenter(to))
@@ -482,6 +517,15 @@ export function routeAllEdges(nodes, edges) {
 
     const startFrac = slotFor.get(`${edge.id}|${from.id}|${startSide}`) ?? 0.5
     const endFrac   = slotFor.get(`${edge.id}|${to.id}|${endSide}`)   ?? 0.5
+
+    if (meta.selfLoop) {
+      out.set(edge.id, {
+        points:  buildSelfLoop(from, startFrac, endFrac),
+        slotOut: { side: startSide, fraction: startFrac },
+        slotIn:  { side: endSide,   fraction: endFrac },
+      })
+      continue
+    }
 
     const start    = sidePointAt(from, startSide, startFrac)
     const end      = sidePointAt(to,   endSide,   endFrac)

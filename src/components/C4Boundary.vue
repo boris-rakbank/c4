@@ -50,6 +50,9 @@ function onPointerMove(e) {
 }
 
 function onPointerUp() {
+  if (isDragging.value) {
+    store.snapActivePosition(props.boundary.id, 'boundary')
+  }
   isDragging.value = false
   store.finishDrag()
 }
