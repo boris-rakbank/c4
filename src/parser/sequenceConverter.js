@@ -148,10 +148,14 @@ export function convertSequenceToGraph(source, { showResponses = false } = {}) {
     const stepNumber = autonumberStart + m.position * autonumberStep
     const numberPrefix = autonumber ? `${stepNumber}. ` : ''
     const combined = `${numberPrefix}${m.label}`.trim()
+    // Responses use Mermaid's dotted flowchart arrow so the graph
+    // renderer can draw them with a dotted stroke, preserving the
+    // solid/dashed distinction from the original sequence diagram.
+    const arrow = m.isResponse ? '-.->' : '-->'
     if (combined) {
-      out.push(`    ${m.from} -->|${combined}| ${m.to}`)
+      out.push(`    ${m.from} ${arrow}|${combined}| ${m.to}`)
     } else {
-      out.push(`    ${m.from} --> ${m.to}`)
+      out.push(`    ${m.from} ${arrow} ${m.to}`)
     }
   }
   return out.join('\n')

@@ -135,6 +135,9 @@ export function parseMermaid(source) {
 
   const edgePattern = /^(.+?)\s*(-{1,2}->|=+>|-.->)\s*(?:\|(.+?)\|\s*)?(.+)$/
   const edgeLabelBeforeArrow = /^(.+?)\s*--\s+(.+?)\s*-->\s*(.+)$/
+  // An arrow token is "dotted" when it contains a `.` — Mermaid's
+  // only dotted flowchart arrow form (e.g. `-.->`, `-.-.->`).
+  const isDottedArrow = (arrow) => arrow.includes('.')
 
   for (const line of contentLines) {
     if (line.startsWith('%%') || line.startsWith('style ')) {
@@ -224,7 +227,8 @@ export function parseMermaid(source) {
       setNode(leftNode)
       setNode(rightNode)
       if (leftNode && rightNode) {
-        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim() })
+        // `A -- label --> B` form is always a solid arrow.
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim(), dotted: false })
       }
       continue
     }
@@ -236,7 +240,7 @@ export function parseMermaid(source) {
       setNode(leftNode)
       setNode(rightNode)
       if (leftNode && rightNode) {
-        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim() })
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim(), dotted: isDottedArrow(edgeMatch[2]) })
       }
       continue
     }

@@ -27,6 +27,12 @@ const maxLineLength = computed(() => {
   return m
 })
 
+// Dotted (response) edges get a short-gap pattern distinct from the
+// standard dashed pattern used for request/solid edges.
+const strokeDasharray = computed(() =>
+  props.edge.dotted ? '2 4' : '6 3'
+)
+
 // Label position is precomputed by the router (with overlap
 // resolution across all edges). Fall back to a local "longest segment
 // midpoint" calculation if the router didn't supply one (e.g. during
@@ -58,7 +64,7 @@ const labelPos = computed(() => {
       fill="none"
       stroke="#64748b"
       stroke-width="1.5"
-      stroke-dasharray="6 3"
+      :stroke-dasharray="strokeDasharray"
       stroke-linejoin="round"
       stroke-linecap="round"
       marker-end="url(#arrowhead)"

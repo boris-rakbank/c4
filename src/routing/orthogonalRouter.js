@@ -216,7 +216,7 @@ function sideDir(side) {
 // ─────────────────────────────────────────────────────────────────────────────
 // A*
 // ─────────────────────────────────────────────────────────────────────────────
-function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx, goalDirIdx) {
+function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx, goalDirIdx, extraCost) {
   const cols = grid.cols
   const rows = grid.rows
 
@@ -267,6 +267,9 @@ function aStar(grid, startCx, startCy, goalCx, goalCy, startDirIdx, goalDirIdx) 
 
       let step = 1
       if (cur.d !== 4 && cur.d !== nd) step += TURN_PENALTY
+      // Soft penalty for cells already used by previously routed
+      // edges — spreads parallel Z-shaped paths apart.
+      if (extraCost) step += extraCost(ncx, ncy)
 
       const ng = cur.g + step
       const nkey = stateKey(ncx, ncy, nd)
@@ -400,7 +403,7 @@ function lShape(start, end, startDir) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public: route a single edge
 // ─────────────────────────────────────────────────────────────────────────────
-export function routeOrthogonal(grid, start, end, startDir, endDir) {
+export function routeOrthogonal(grid, start, end, startDir, endDir, extraCost) {
   // Route A* between "stub" points offset outside each node along the side
   // normal. The actual perimeter points (`start`, `end`) are prepended /
   // appended afterwards, so the polyline still terminates on the node edge
@@ -429,11 +432,11 @@ export function routeOrthogonal(grid, start, end, startDir, endDir) {
   // segment is perpendicular to the target side — a clean Z-shape rather
   // than a bend that slams into the node from the wrong side.
   const goalDirIdx = dirIndex(-endDir.dx, -endDir.dy)
-  let path = aStar(grid, scx, scy, gcx, gcy, startDirIdx, goalDirIdx)
+  let path = aStar(grid, scx, scy, gcx, gcy, startDirIdx, goalDirIdx, extraCost)
   // Fallback: if the strict entry direction is unreachable, relax the
   // constraint.
   if (!path || path.length === 0) {
-    path = aStar(grid, scx, scy, gcx, gcy, startDirIdx)
+    path = aStar(grid, scx, scy, gcx, gcy, startDirIdx, undefined, extraCost)
   }
   if (!path || path.length === 0) {
     return lShape(start, end, startDir)
@@ -461,6 +464,37 @@ export function routeAllEdges(nodes, edges) {
 
   const nodeById = new Map(nodes.map(n => [n.id, n]))
   const grid = buildObstacleGrid(nodes)
+
+  // Per-cell "usage" counter: each time we route an edge we increment
+  // the cells that edge's polyline passes through, and A* reads this
+  // via `extraCost` to add a soft penalty for reusing a line. This
+  // spreads parallel Z-shaped paths apart — edges that would
+  // naturally pick the same middle segment get pushed one cell aside
+  // if the detour cost is below the reuse penalty.
+  const REUSE_PENALTY = 3
+  const usage = new Uint8Array(grid.cols * grid.rows)
+  const cellUsageExtra = (cx, cy) => usage[cy * grid.cols + cx] * REUSE_PENALTY
+  const markCellsUsed = (pts) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = grid.toCell(pts[i].x, pts[i].y)
+      const b = grid.toCell(pts[i + 1].x, pts[i + 1].y)
+      if (a.cx === b.cx) {
+        const lo = Math.min(a.cy, b.cy), hi = Math.max(a.cy, b.cy)
+        for (let cy = lo; cy <= hi; cy++) {
+          if (cy >= 0 && cy < grid.rows && a.cx >= 0 && a.cx < grid.cols) {
+            usage[cy * grid.cols + a.cx]++
+          }
+        }
+      } else if (a.cy === b.cy) {
+        const lo = Math.min(a.cx, b.cx), hi = Math.max(a.cx, b.cx)
+        for (let cx = lo; cx <= hi; cx++) {
+          if (a.cy >= 0 && a.cy < grid.rows && cx >= 0 && cx < grid.cols) {
+            usage[a.cy * grid.cols + cx]++
+          }
+        }
+      }
+    }
+  }
 
   // ── Pass 1: pick sides, collect per-(node, side) groups ───────────────────
   // groups: Map<`${nodeId}|${side}`, Array<{ edgeId, otherCenter }>>
@@ -570,9 +604,12 @@ export function routeAllEdges(nodes, edges) {
 
     const points = withNodeUnblocked(grid, from, () =>
       withNodeUnblocked(grid, to, () =>
-        routeOrthogonal(grid, start, end, startDir, endDir)
+        routeOrthogonal(grid, start, end, startDir, endDir, cellUsageExtra)
       )
     )
+    // Mark this edge's cells as used so the next edge's A* prefers
+    // fresh corridors — this is what spreads parallel Z paths.
+    if (points && points.length > 1) markCellsUsed(points)
     out.set(edge.id, {
       points,
       slotOut: { side: startSide, fraction: startFrac },
