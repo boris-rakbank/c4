@@ -120,6 +120,16 @@ normals of the attach sides, we do the following:
      runs over wiggles.
    - State keyed by `(cx, cy, lastDir)` (5 directions counting "none"
      for the start) so the turn penalty is applied correctly.
+   - **Cell-reuse penalty**: a per-cell `usage` counter is maintained
+     across the whole pass. Each time an edge is routed, every cell
+     its polyline passes through is incremented. A\* reads this via
+     an `extraCost(cx, cy)` closure and adds `usage[cell] * REUSE_PENALTY`
+     (currently `3`) to the step cost. The result is that the
+     second edge in a parallel cluster prefers to detour one cell
+     sideways rather than reuse the first edge's corridor — this is
+     what spreads parallel Z-shaped paths instead of stacking them.
+     The penalty is deliberately lower than `TURN_PENALTY` so that
+     obvious short routes still win.
    - **Goal-direction constraint**: the goal cell may only be reached
      moving in the direction opposite to `endDir` (i.e. the approach
      direction into the target side). This guarantees the final
@@ -157,6 +167,29 @@ node nest as concentric rectangles rather than stacking:
   to the right)
 - anchor fraction along top/bottom `f = 0.78 - index * 0.12`
   (each loop's anchor moves leftward along the node)
+
+---
+
+### Dotted (response) edges
+
+The parser tracks each edge's arrow style via a small helper
+`isDottedArrow(arrow)` — any arrow token containing a `.` is treated
+as dotted, which matches Mermaid's dotted flowchart arrow forms
+(`-.->`, `-.-.->`, etc.). The `edge.dotted` boolean flows through
+the router unchanged (routing is pure geometry — style doesn't
+affect paths) and ends up on the polyline in
+[C4Edge.vue](../src/components/C4Edge.vue) where
+`stroke-dasharray` is a computed property:
+
+- `edge.dotted === true` → `"2 4"` — short-gap dotted stroke
+- otherwise                → `"6 3"` — the default dashed stroke
+
+This is also how the sequence-diagram converter at
+[sequenceConverter.js](../src/parser/sequenceConverter.js) preserves
+the solid/dashed distinction from the original `sequenceDiagram`:
+request messages (`->>`) become solid `-->` edges, response messages
+(`-->>`) become dotted `-.->` edges. The rendered graph therefore
+retains the visual semantic of the original sequence.
 
 ---
 
@@ -214,6 +247,7 @@ source.
 | `PADDING_CELLS`  | 1     | obstacle inflation around each node           |
 | `MARGIN`         | 80    | grid bounding-box margin (4 cells)            |
 | `TURN_PENALTY`   | 5     | A\* cost added per direction change           |
+| `REUSE_PENALTY`  | 3     | A\* cost added per already-used cell (spread) |
 | `STUB_LENGTH`    | 24    | minimum straight segment at each edge end     |
 | `GRID_SIZE`      | 50    | drag-snap grid spacing (UI, not router)       |
 | `LABEL_CHAR_W`   | 7     | approx label char width @ font-size 11        |
