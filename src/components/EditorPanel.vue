@@ -13,6 +13,23 @@ function onInput(e) {
     store.updateFromSource(val)
   }, 500)
 }
+
+// Detect when the user pastes a Mermaid sequenceDiagram and divert it
+// into the conversion modal instead of letting the parser silently fail.
+const SEQUENCE_HEADER_RE = /^\s*(?:%%[^\n]*\n\s*)*sequenceDiagram\b/
+
+function onPaste(e) {
+  const pasted = e.clipboardData?.getData('text') ?? ''
+  if (!pasted) return
+  const ta = e.target
+  const before = ta.value.slice(0, ta.selectionStart)
+  const after  = ta.value.slice(ta.selectionEnd)
+  const next = before + pasted + after
+  if (SEQUENCE_HEADER_RE.test(next)) {
+    e.preventDefault()
+    store.promptSequenceConversion(next)
+  }
+}
 </script>
 
 <template>
@@ -24,6 +41,7 @@ function onInput(e) {
       spellcheck="false"
       placeholder="Enter mermaid flowchart syntax..."
       @input="onInput"
+      @paste="onPaste"
     />
   </div>
 </template>

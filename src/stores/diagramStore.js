@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
+import { convertSequenceToGraph } from '../parser/sequenceConverter.js'
 import { applyNodeStyle, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 import { routeAllEdges } from '../routing/orthogonalRouter.js'
@@ -31,6 +32,14 @@ export const useDiagramStore = defineStore('diagram', () => {
   const edges = ref([])
   const boundaries = ref([])
   const selectedNodeId = ref(null)
+
+  // When the user pastes a Mermaid sequenceDiagram, we stash the full
+  // pasted text here and show a conversion modal instead of mutating the
+  // editor. `previousSourceBeforePaste` lets Cancel roll back the editor
+  // to its pre-paste state (the editor textarea is bound to
+  // `mermaidSource`, so restoring this ref restores the visible text).
+  const pendingSequenceSource = ref(null)
+  const previousSourceBeforePaste = ref(null)
 
   const selectedNode = computed(() => {
     if (!selectedNodeId.value) return null
@@ -259,6 +268,30 @@ export const useDiagramStore = defineStore('diagram', () => {
     normalizePositions()
   }
 
+  function promptSequenceConversion(pastedText) {
+    previousSourceBeforePaste.value = mermaidSource.value
+    pendingSequenceSource.value = pastedText
+  }
+
+  function confirmSequenceConversion({ showResponses } = {}) {
+    if (pendingSequenceSource.value == null) return
+    const graphSource = convertSequenceToGraph(
+      pendingSequenceSource.value,
+      { showResponses: !!showResponses }
+    )
+    updateFromSource(graphSource)
+    pendingSequenceSource.value = null
+    previousSourceBeforePaste.value = null
+  }
+
+  function cancelSequenceConversion() {
+    if (previousSourceBeforePaste.value != null) {
+      mermaidSource.value = previousSourceBeforePaste.value
+    }
+    pendingSequenceSource.value = null
+    previousSourceBeforePaste.value = null
+  }
+
   function init() {
     const result = parseMermaid(mermaidSource.value)
     nodes.value = result.nodes
@@ -281,6 +314,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     boundaries,
     selectedNodeId,
     selectedNode,
+    pendingSequenceSource,
     routedEdges,
     getNodeById,
     getBoundaryById,
@@ -291,6 +325,9 @@ export const useDiagramStore = defineStore('diagram', () => {
     selectNode,
     clearSelection,
     setNodeStyle,
+    promptSequenceConversion,
+    confirmSequenceConversion,
+    cancelSequenceConversion,
     init,
   }
 })

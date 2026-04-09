@@ -11,6 +11,22 @@ const polylinePoints = computed(() => {
   return pts.map(p => `${p.x},${p.y}`).join(' ')
 })
 
+// Split label on literal `\n` or real newlines so multi-line labels
+// render as stacked tspans.
+const LABEL_LINE_H = 13
+const labelLines = computed(() => {
+  const raw = props.edge.label
+  if (!raw) return []
+  return String(raw).split(/\\n|\n/)
+})
+const maxLineLength = computed(() => {
+  let m = 0
+  for (const line of labelLines.value) {
+    if (line.length > m) m = line.length
+  }
+  return m
+})
+
 // Place the label at the midpoint of the longest segment in the polyline.
 // Long segments are usually horizontal/vertical and give the cleanest reading.
 const labelPos = computed(() => {
@@ -23,7 +39,10 @@ const labelPos = computed(() => {
     const len = Math.hypot(b.x - a.x, b.y - a.y)
     if (len > bestLen) {
       bestLen = len
-      bestMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 }
+      // Center the label block vertically on the segment midpoint.
+      const n = Math.max(labelLines.value.length, 1)
+      const yOffset = 8 + (n - 1) * (LABEL_LINE_H / 2)
+      bestMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - yOffset }
     }
   }
   return bestMid
@@ -43,26 +62,29 @@ const labelPos = computed(() => {
       marker-end="url(#arrowhead)"
     />
     <rect
-      v-if="edge.label && labelPos"
-      :x="labelPos.x - edge.label.length * 3.5 - 6"
+      v-if="labelLines.length && labelPos"
+      :x="labelPos.x - maxLineLength * 3.5 - 6"
       :y="labelPos.y - 10"
-      :width="edge.label.length * 7 + 12"
-      :height="18"
+      :width="maxLineLength * 7 + 12"
+      :height="18 + (labelLines.length - 1) * LABEL_LINE_H"
       rx="3"
       fill="white"
       stroke="#e2e8f0"
       stroke-width="1"
     />
     <text
-      v-if="edge.label && labelPos"
+      v-if="labelLines.length && labelPos"
       :x="labelPos.x"
       :y="labelPos.y + 3"
       text-anchor="middle"
       fill="#475569"
       font-size="11"
       font-family="sans-serif"
-    >
-      {{ edge.label }}
-    </text>
+    ><tspan
+        v-for="(line, i) in labelLines"
+        :key="i"
+        :x="labelPos.x"
+        :dy="i === 0 ? 0 : LABEL_LINE_H"
+      >{{ line }}</tspan></text>
   </g>
 </template>

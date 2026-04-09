@@ -44,6 +44,22 @@ function typeTag() {
   return `[${n.type}]`
 }
 
+// Build the type-tag line set, wrapping the bracketed form around the
+// (possibly multi-line) typeTitle: first line is `[type: firstLine`,
+// intermediate lines are plain, the last line gets the closing `]`.
+function buildTypeTagLines(n) {
+  if (!n.typeTitle) return [`[${n.type}]`]
+  const parts = splitLines(n.typeTitle)
+  if (parts.length <= 1) return [`[${n.type}: ${n.typeTitle}]`]
+  const out = []
+  for (let i = 0; i < parts.length; i++) {
+    if (i === 0) out.push(`[${n.type}: ${parts[i]}`)
+    else if (i === parts.length - 1) out.push(`${parts[i]}]`)
+    else out.push(parts[i])
+  }
+  return out
+}
+
 const w = computed(() => props.node.width)
 const h = computed(() => props.node.height)
 
@@ -113,6 +129,30 @@ function textStartY() {
   if (t === 'directory') return 36
   return 30
 }
+
+// Split a label string on both literal `\n` (backslash-n) and real
+// newlines, so users writing either form in the source get multi-line
+// text rendering.
+function splitLines(s) {
+  if (s == null || s === '') return []
+  return String(s).split(/\\n|\n/)
+}
+
+const titleLines = computed(() => splitLines(props.node.title))
+const descriptionLines = computed(() => splitLines(props.node.description))
+const typeTagLines = computed(() => buildTypeTagLines(props.node))
+const TITLE_LINE_H = 16
+const TYPE_LINE_H = 12
+const DESC_LINE_H = 12
+
+const typeTagY = computed(() => {
+  const extraTitleLines = Math.max(titleLines.value.length - 1, 0)
+  return textStartY() + 18 + extraTitleLines * TITLE_LINE_H
+})
+const descriptionStartY = computed(() => {
+  const extraTypeLines = Math.max(typeTagLines.value.length - 1, 0)
+  return typeTagY.value + 16 + extraTypeLines * TYPE_LINE_H
+})
 </script>
 
 <template>
@@ -303,7 +343,7 @@ function textStartY() {
 
     <!-- ==================== TEXT LABELS ==================== -->
 
-    <!-- Title (bold) -->
+    <!-- Title (bold) — supports \n-separated multi-line -->
     <text
       :x="w / 2"
       :y="textStartY()"
@@ -312,30 +352,45 @@ function textStartY() {
       font-size="14"
       font-weight="bold"
       font-family="sans-serif"
-    >{{ node.title }}</text>
+    ><tspan
+        v-for="(line, i) in titleLines"
+        :key="i"
+        :x="w / 2"
+        :dy="i === 0 ? 0 : TITLE_LINE_H"
+      >{{ line }}</tspan></text>
 
-    <!-- [type: type_title] -->
+    <!-- [type: type_title] — supports \n-separated multi-line -->
     <text
       :x="w / 2"
-      :y="textStartY() + 18"
+      :y="typeTagY"
       text-anchor="middle"
       :fill="getColors().text"
       font-size="10"
       opacity="0.8"
       font-family="sans-serif"
-    >{{ typeTag() }}</text>
+    ><tspan
+        v-for="(line, i) in typeTagLines"
+        :key="i"
+        :x="w / 2"
+        :dy="i === 0 ? 0 : TYPE_LINE_H"
+      >{{ line }}</tspan></text>
 
-    <!-- Description -->
+    <!-- Description — supports \n-separated multi-line -->
     <text
-      v-if="node.description"
+      v-if="descriptionLines.length"
       :x="w / 2"
-      :y="textStartY() + 34"
+      :y="descriptionStartY"
       text-anchor="middle"
       :fill="getColors().text"
       font-size="10"
       opacity="0.6"
       font-family="sans-serif"
-    >{{ node.description }}</text>
+    ><tspan
+        v-for="(line, i) in descriptionLines"
+        :key="i"
+        :x="w / 2"
+        :dy="i === 0 ? 0 : DESC_LINE_H"
+      >{{ line }}</tspan></text>
   </g>
 </template>
 

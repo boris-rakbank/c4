@@ -5,6 +5,7 @@ import { useDiagramStore } from './stores/diagramStore.js'
 import EditorPanel from './components/EditorPanel.vue'
 import DiagramPanel from './components/DiagramPanel.vue'
 import StylePanel from './components/StylePanel.vue'
+import SequenceDiagramModal from './components/SequenceDiagramModal.vue'
 
 const store = useDiagramStore()
 onMounted(() => store.init())
@@ -29,6 +30,7 @@ onMounted(() => store.init())
         </SplitterGroup>
       </SplitterPanel>
     </SplitterGroup>
+    <SequenceDiagramModal />
   </div>
 </template>
 
