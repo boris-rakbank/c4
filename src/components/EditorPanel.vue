@@ -34,7 +34,7 @@ function onPaste(e) {
 
 <template>
   <div class="editor-panel">
-    <div class="editor-header">Mermaid Input</div>
+    <div class="editor-header">Mermaid Sequence or Graph Input</div>
     <textarea
       :value="store.mermaidSource"
       class="editor-textarea"
