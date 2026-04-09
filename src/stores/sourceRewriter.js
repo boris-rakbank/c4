@@ -181,15 +181,21 @@ export function setEdgeRoutes(source, routes) {
   const labelBeforeArrow = /^(\w+)\s*--\s+.+?\s*-->\s*(\w+)/
   const indentRe = /^(\s*)/
 
-  // Step 2: walk lines; when we find an edge line whose `${from}-${to}` is in
-  // the route map, insert the comment immediately above it.
+  // Step 2: walk lines; when we find an edge line compute the N-th
+  // occurrence id (matches mermaidParser.edgeIdFor): the first
+  // `A -> B` line is `A-B`, the second is `A-B#2`, etc. Insert the
+  // matching comment immediately above it.
+  const pairCount = new Map() // `${from}-${to}` → running count
   const out = []
   for (const line of lines) {
     const trimmed = line.trim()
     if (trimmed && !trimmed.startsWith('%%')) {
       let m = trimmed.match(labelBeforeArrow) || trimmed.match(edgePattern)
       if (m) {
-        const edgeId = `${m[1]}-${m[2]}`
+        const base = `${m[1]}-${m[2]}`
+        const n = (pairCount.get(base) || 0) + 1
+        pairCount.set(base, n)
+        const edgeId = n === 1 ? base : `${base}#${n}`
         const r = map.get(edgeId)
         if (r && r.slotOut && r.slotIn && r.points) {
           const indent = (line.match(indentRe) || ['', ''])[1]

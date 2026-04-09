@@ -203,6 +203,19 @@ export function parseMermaid(source) {
       continue
     }
 
+    // Generate a unique edge id. `from-to` alone collides when a
+    // diagram has multiple edges between the same pair of nodes (e.g.
+    // repeated request/response messages in a converted sequence
+    // diagram), which makes the router, slot distribution, and edge
+    // route map entries overwrite each other. Suffix with a running
+    // count so each edge occurrence stands on its own.
+    const edgeIdFor = (fromId, toId) => {
+      const base = `${fromId}-${toId}`
+      let n = 0
+      for (const e of edges) if (e.from === fromId && e.to === toId) n++
+      return n === 0 ? base : `${base}#${n + 1}`
+    }
+
     // Try edge patterns
     let edgeMatch = line.match(edgeLabelBeforeArrow)
     if (edgeMatch) {
@@ -211,7 +224,7 @@ export function parseMermaid(source) {
       setNode(leftNode)
       setNode(rightNode)
       if (leftNode && rightNode) {
-        edges.push({ id: `${leftNode.id}-${rightNode.id}`, from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim() })
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim() })
       }
       continue
     }
@@ -223,7 +236,7 @@ export function parseMermaid(source) {
       setNode(leftNode)
       setNode(rightNode)
       if (leftNode && rightNode) {
-        edges.push({ id: `${leftNode.id}-${rightNode.id}`, from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim() })
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim() })
       }
       continue
     }

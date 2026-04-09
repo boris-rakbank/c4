@@ -358,13 +358,22 @@ function alignLast(pts, end, dir) {
   return pts
 }
 
-// Fixed rectangular self-loop on the right side of `node`.
-// The loop exits the top side at `topFrac` (default 0.75), travels up,
-// out to the right past the node, down to below the node, then back in
-// to the bottom side at `bottomFrac`. Looks like a C-shape wrapped
-// around the right edge — the classic self-loop shape.
-function buildSelfLoop(node, topFrac = 0.75, bottomFrac = 0.75) {
-  const D = 30 // how far outside the node the loop bends travel
+// Rectangular self-loop wrapping around the right side of `node`.
+// Exits the top side at `topFrac`, travels up, out to the right past
+// the node, down to below the node, then back in to the bottom side
+// at `bottomFrac` — a C-shape around the right edge.
+//
+// `topFrac` / `bottomFrac` are slot fractions assigned by the normal
+// per-side distribution pass, so the loop's anchors coexist with any
+// non-self-loop edges attached to the same sides. `index` is the
+// 0-based self-loop index on this node and controls only the bend
+// distance D, so multiple self-loops on one node nest as concentric
+// rectangles to the right of the node instead of overlapping.
+function buildSelfLoop(node, index = 0, topFrac = 0.75, bottomFrac = 0.75) {
+  const BASE_D = 25  // initial bend distance past the node edge
+  const STEP_D = 22  // added bend distance per nested loop
+  const D = BASE_D + index * STEP_D
+
   const x = node.x, y = node.y, w = node.width, h = node.height
   const topX    = x + w * topFrac
   const bottomX = x + w * bottomFrac
@@ -465,23 +474,44 @@ export function routeAllEdges(nodes, edges) {
     arr.push({ edgeId, otherCenter })
   }
 
+  // Per-node counter of how many self-loops we've already seen. Each
+  // self-loop gets a sequential index so buildSelfLoop can nest their
+  // rectangles at different bend distances (the D parameter).
+  const selfLoopIndex = new Map() // nodeId → next index
+
   for (const edge of edges) {
     const from = nodeById.get(edge.from)
     const to   = nodeById.get(edge.to)
     if (!from || !to) continue
-    // Self-loops get a fixed rectangular loop shape on the right side of
-    // the node — A* cannot route source === target cleanly (every A*
-    // cell pair degenerates), and pickSides' center-to-center vector is
-    // zero. Fixed sides (top → bottom) let the normal label placement
-    // and the per-side slot distribution still work.
+    // Self-loops get a fixed nested-rectangle loop on the right side
+    // of the node — A* cannot route source === target cleanly (every
+    // A* cell pair degenerates), and pickSides' center-to-center
+    // vector is zero.
+    //
+    // To pick anchor fractions along the top/bottom that don't collide
+    // with non-self-loop edges on those sides, we still add the
+    // self-loop to the top and bottom groups with a virtual
+    // "otherCenter" pushed far off the node's right — which sorts the
+    // loop to the end of each group. We nudge successive self-loops
+    // further right so their otherCenters stay ordered and they each
+    // get their own slot fraction from the generic distribution pass.
     if (from === to) {
+      const idx = selfLoopIndex.get(from.id) || 0
+      selfLoopIndex.set(from.id, idx + 1)
       edgeMeta.set(edge.id, {
         from, to,
         startSide: 'top', endSide: 'bottom',
         selfLoop: true,
+        selfLoopIndex: idx,
       })
-      addToGroup(from.id, 'top',    edge.id, { x: from.x + from.width, y: from.y - 1 })
-      addToGroup(from.id, 'bottom', edge.id, { x: from.x + from.width, y: from.y + from.height + 1 })
+      // Virtual "other side" well off to the right so the slot
+      // distribution sorts self-loops to the rightmost slots of the
+      // top and bottom groups, *after* all normal edges.
+      const virtualX = from.x + from.width + 10_000 + idx
+      const topY     = from.y - 1
+      const bottomY  = from.y + from.height + 1
+      addToGroup(from.id, 'top',    edge.id, { x: virtualX, y: topY })
+      addToGroup(from.id, 'bottom', edge.id, { x: virtualX, y: bottomY })
       continue
     }
     const { startSide, endSide } = pickSides(from, to)
@@ -519,8 +549,14 @@ export function routeAllEdges(nodes, edges) {
     const endFrac   = slotFor.get(`${edge.id}|${to.id}|${endSide}`)   ?? 0.5
 
     if (meta.selfLoop) {
+      // startFrac / endFrac were assigned by the normal slot
+      // distribution — they already avoid the slots taken by
+      // non-self-loop edges on the top and bottom sides. The
+      // self-loop index controls only the rectangle bend distance D
+      // (nested loops), not the anchor fractions anymore.
+      const loopPts = buildSelfLoop(from, meta.selfLoopIndex, startFrac, endFrac)
       out.set(edge.id, {
-        points:  buildSelfLoop(from, startFrac, endFrac),
+        points:  loopPts,
         slotOut: { side: startSide, fraction: startFrac },
         slotIn:  { side: endSide,   fraction: endFrac },
       })
@@ -544,5 +580,76 @@ export function routeAllEdges(nodes, edges) {
     })
   }
 
+  // ── Pass 3: compute and distribute edge label positions ─────────────────
+  // Each label is anchored at the midpoint of the longest polyline
+  // segment. Labels whose bounding boxes horizontally overlap AND sit at
+  // similar Y end up stacked on top of each other in the render — so we
+  // sweep through them left-to-right and shift colliding labels downward
+  // by a line-height at a time until no overlap remains.
+  assignLabelLayout(edges, out)
+
   return out
+}
+
+// Label bounding-box constants — match the render in C4Edge.vue.
+const LABEL_CHAR_W = 7      // approx char width in px at font-size 11
+const LABEL_LINE_H = 13
+const LABEL_V_GAP  = 4      // minimum gap between stacked labels
+const LABEL_Y_LIFT = 8      // same lift applied in C4Edge
+
+function assignLabelLayout(edges, routeMap) {
+  const labels = []
+  for (const edge of edges) {
+    const info = routeMap.get(edge.id)
+    if (!info || !info.points || info.points.length < 2) continue
+    const rawLines = String(edge.label || '').split(/\\n|\n/).filter(Boolean)
+    if (rawLines.length === 0) continue
+
+    const maxLen = rawLines.reduce((m, l) => Math.max(m, l.length), 0)
+    const width  = maxLen * LABEL_CHAR_W
+    const height = rawLines.length * LABEL_LINE_H
+    const n      = rawLines.length
+
+    // Anchor at the midpoint of the longest polyline segment.
+    const pts = info.points
+    let bestLen = -1, midX = 0, midY = 0
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1]
+      const len = Math.hypot(b.x - a.x, b.y - a.y)
+      if (len > bestLen) {
+        bestLen = len
+        const yLift = LABEL_Y_LIFT + (n - 1) * (LABEL_LINE_H / 2)
+        midX = (a.x + b.x) / 2
+        midY = (a.y + b.y) / 2 - yLift
+      }
+    }
+    labels.push({ info, x: midX, y: midY, width, height })
+  }
+
+  // Greedy collision resolution: process labels left-to-right, for each
+  // one check against all previously placed labels; if horizontally
+  // overlapping AND too-close vertically, shift this label just below
+  // the colliding one.
+  labels.sort((a, b) => a.x - b.x)
+  for (let i = 0; i < labels.length; i++) {
+    const L = labels[i]
+    let changed = true
+    let guard = 0
+    while (changed && guard++ < 50) {
+      changed = false
+      for (let j = 0; j < i; j++) {
+        const O = labels[j]
+        const xOverlap = Math.abs(L.x - O.x) < (L.width + O.width) / 2
+        if (!xOverlap) continue
+        const yDist = Math.abs(L.y - O.y)
+        const yNeeded = (L.height + O.height) / 2 + LABEL_V_GAP
+        if (yDist < yNeeded) {
+          L.y = O.y + yNeeded
+          changed = true
+          break
+        }
+      }
+    }
+    L.info.labelPos = { x: L.x, y: L.y }
+  }
 }

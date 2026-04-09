@@ -27,9 +27,12 @@ const maxLineLength = computed(() => {
   return m
 })
 
-// Place the label at the midpoint of the longest segment in the polyline.
-// Long segments are usually horizontal/vertical and give the cleanest reading.
+// Label position is precomputed by the router (with overlap
+// resolution across all edges). Fall back to a local "longest segment
+// midpoint" calculation if the router didn't supply one (e.g. during
+// the brief moment routing hasn't run yet).
 const labelPos = computed(() => {
+  if (props.edge.labelPos) return props.edge.labelPos
   const pts = props.edge.points
   if (!pts || pts.length < 2) return null
   let bestLen = -1
@@ -39,7 +42,6 @@ const labelPos = computed(() => {
     const len = Math.hypot(b.x - a.x, b.y - a.y)
     if (len > bestLen) {
       bestLen = len
-      // Center the label block vertically on the segment midpoint.
       const n = Math.max(labelLines.value.length, 1)
       const yOffset = 8 + (n - 1) * (LABEL_LINE_H / 2)
       bestMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - yOffset }
@@ -60,17 +62,6 @@ const labelPos = computed(() => {
       stroke-linejoin="round"
       stroke-linecap="round"
       marker-end="url(#arrowhead)"
-    />
-    <rect
-      v-if="labelLines.length && labelPos"
-      :x="labelPos.x - maxLineLength * 3.5 - 6"
-      :y="labelPos.y - 10"
-      :width="maxLineLength * 7 + 12"
-      :height="18 + (labelLines.length - 1) * LABEL_LINE_H"
-      rx="3"
-      fill="white"
-      stroke="#e2e8f0"
-      stroke-width="1"
     />
     <text
       v-if="labelLines.length && labelPos"

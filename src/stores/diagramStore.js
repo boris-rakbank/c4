@@ -81,9 +81,10 @@ export const useDiagramStore = defineStore('diagram', () => {
       const r = routes.get(e.id)
       return {
         ...e,
-        points:  r?.points  || null,
-        slotOut: r?.slotOut || null,
-        slotIn:  r?.slotIn  || null,
+        points:   r?.points   || null,
+        slotOut:  r?.slotOut  || null,
+        slotIn:   r?.slotIn   || null,
+        labelPos: r?.labelPos || null,
       }
     })
   })
