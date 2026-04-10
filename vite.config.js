@@ -4,7 +4,6 @@ import Components from 'unplugin-vue-components/vite'
 import RekaResolver from 'reka-ui/resolver'
 
 export default defineConfig({
-  base: '/c4/',
   plugins: [
     vue(),
     Components({
