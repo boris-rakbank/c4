@@ -37,7 +37,9 @@ const DECL_RE = /^(participant|actor)\s+(\w+)(?:\s+as\s+(.+))?$/i
 // The arrow is the longest run of `-`, optional second `-`, then one of
 // `> >> x )` (with optional trailing `>` for `>>`).
 // Prefix `--` means dashed (response).
-const MESSAGE_RE = /^(\w+)\s*(-{1,2}(?:>>?|x|\)))\s*(\w+)\s*(?::\s*(.*))?$/
+// The target participant may be prefixed with `+` or `-` (activation
+// decorators, e.g. `->>+Kong` or `-->-Kong`) — those are stripped.
+const MESSAGE_RE = /^(\w+)\s*(-{1,2}(?:>>?|x|\)))\s*[+-]?(\w+)\s*(?::\s*(.*))?$/
 
 function sanitizeId(id) {
   return id.replace(/[^A-Za-z0-9_]/g, '_')
