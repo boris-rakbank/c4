@@ -85,7 +85,8 @@ export const useDiagramStore = defineStore('diagram', () => {
         points:   r?.points   || null,
         slotOut:  r?.slotOut  || null,
         slotIn:   r?.slotIn   || null,
-        labelPos: r?.labelPos || null,
+        labelPos:    r?.labelPos    || null,
+        labelAnchor: r?.labelAnchor || null,
       }
     })
   })

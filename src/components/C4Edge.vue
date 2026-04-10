@@ -73,7 +73,7 @@ const labelPos = computed(() => {
       v-if="labelLines.length && labelPos"
       :x="labelPos.x"
       :y="labelPos.y + 3"
-      text-anchor="middle"
+      :text-anchor="edge.labelAnchor || 'middle'"
       fill="#475569"
       font-size="11"
       font-family="sans-serif"

@@ -590,9 +590,14 @@ export function routeAllEdges(nodes, edges) {
       // (nested loops), not the anchor fractions anymore.
       const loopPts = buildSelfLoop(from, meta.selfLoopIndex, startFrac, endFrac)
       out.set(edge.id, {
-        points:  loopPts,
-        slotOut: { side: startSide, fraction: startFrac },
-        slotIn:  { side: endSide,   fraction: endFrac },
+        points:      loopPts,
+        slotOut:     { side: startSide, fraction: startFrac },
+        slotIn:      { side: endSide,   fraction: endFrac },
+        // selfLabelX pins the label's left edge just past the node's right
+        // side; assignLabelLayout uses it to override midX while still
+        // computing and collision-resolving y normally.
+        selfLabelX:  from.x + from.width + 6,
+        labelAnchor: 'start',
       })
       continue
     }
@@ -656,7 +661,7 @@ function assignLabelLayout(edges, routeMap) {
       if (len > bestLen) {
         bestLen = len
         const yLift = LABEL_Y_LIFT + (n - 1) * (LABEL_LINE_H / 2)
-        midX = (a.x + b.x) / 2
+        midX = info.selfLabelX ?? (a.x + b.x) / 2
         midY = (a.y + b.y) / 2 - yLift
       }
     }
