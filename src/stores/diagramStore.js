@@ -12,7 +12,7 @@ const BOUNDARY_TITLE_HEIGHT = 40
 
 export const useDiagramStore = defineStore('diagram', () => {
   const mermaidSource = ref(`graph TD
-    subgraph Rakbank [Rakbank Internet Banking]
+    subgraph MyCompany [MyCompany Startup]
       A[person: Customer<br/>User<br/>Banking customer] -->|Uses| B[spa: Single-page App<br/>Web Application<br/>Serves the UI]
       B -->|API calls| C[server-app: Node.js<br/>API Server<br/>Handles business logic]
       C -->|Reads/Writes| D[database: PostgreSQL<br/>Main Database<br/>Stores accounts]
