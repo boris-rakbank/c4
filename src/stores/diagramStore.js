@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
 import { convertSequenceToGraph } from '../parser/sequenceConverter.js'
-import { applyNodeStyle, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
+import { applyNodeStyle, setNodeContent, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 import { routeAllEdges } from '../routing/orthogonalRouter.js'
 import { applyForceLayout } from '../layout/forceLayout.js'
@@ -55,12 +55,21 @@ export const useDiagramStore = defineStore('diagram', () => {
     selectedNodeId.value = null
   }
 
-  function setNodeStyle(id, { type, colorName }) {
+  function setNodeStyle(id, { type, colorName, filled }) {
     const node = nodes.value.find(n => n.id === id)
     if (!node) return
-    const nextType = type || node.type
-    const nextColor = colorName || (parseClassName(node.className)?.colorName) || DEFAULT_COLOR
-    const newSource = applyNodeStyle(mermaidSource.value, id, { type: nextType, colorName: nextColor })
+    const parsed = parseClassName(node.className) || {}
+    const nextType   = type      !== undefined ? type      : node.type
+    const nextColor  = colorName !== undefined ? colorName : (parsed.colorName || DEFAULT_COLOR)
+    const nextFilled = filled    !== undefined ? filled    : (parsed.filled !== undefined ? parsed.filled : true)
+    const newSource = applyNodeStyle(mermaidSource.value, id, { type: nextType, colorName: nextColor, filled: nextFilled })
+    updateFromSource(newSource)
+  }
+
+  function setNodeContentAction(id, patch) {
+    const node = nodes.value.find(n => n.id === id)
+    if (!node) return
+    const newSource = setNodeContent(mermaidSource.value, id, patch)
     updateFromSource(newSource)
   }
 
@@ -508,6 +517,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     selectNode,
     clearSelection,
     setNodeStyle,
+    setNodeContent: setNodeContentAction,
     runForceLayout,
     snapActivePosition,
     promptSequenceConversion,

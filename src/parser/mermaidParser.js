@@ -120,7 +120,7 @@ export function parseMermaid(source) {
   }
 
   const lines = source.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-  const startIdx = lines.findIndex(l => /^graph\s+(TD|TB|LR|RL|BT)/i.test(l))
+  const startIdx = lines.findIndex(l => /^(?:graph|flowchart)\s+(TD|TB|LR|RL|BT)/i.test(l))
   const contentLines = startIdx >= 0 ? lines.slice(startIdx + 1) : lines
 
   // Pre-scan: collect saved node positions from `%% @pos id x y` comments.
@@ -133,11 +133,13 @@ export function parseMermaid(source) {
     }
   }
 
-  const edgePattern = /^(.+?)\s*(-{1,2}->|=+>|-.->)\s*(?:\|(.+?)\|\s*)?(.+)$/
+  const edgePattern = /^(.+?)\s*(-{1,2}->|=+>|-.->|-{3,}|-\.-|={3,})\s*(?:\|(.+?)\|\s*)?(.+)$/
   const edgeLabelBeforeArrow = /^(.+?)\s*--\s+(.+?)\s*-->\s*(.+)$/
-  // An arrow token is "dotted" when it contains a `.` — Mermaid's
-  // only dotted flowchart arrow form (e.g. `-.->`, `-.-.->`).
+  // An arrow token is "dotted" when it contains a `.` — covers both
+  // arrow (`-.->`) and non-arrow (`-.-`) dotted forms.
   const isDottedArrow = (arrow) => arrow.includes('.')
+  // Mermaid's non-arrow link forms (`---`, `-.-`, `===`) carry no `>`.
+  const isNoArrow = (arrow) => !arrow.includes('>')
 
   for (const line of contentLines) {
     if (line.startsWith('%%') || line.startsWith('style ')) {
@@ -228,7 +230,7 @@ export function parseMermaid(source) {
       setNode(rightNode)
       if (leftNode && rightNode) {
         // `A -- label --> B` form is always a solid arrow.
-        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim(), dotted: false })
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: edgeMatch[2].trim(), dotted: false, noArrow: false })
       }
       continue
     }
@@ -240,7 +242,8 @@ export function parseMermaid(source) {
       setNode(leftNode)
       setNode(rightNode)
       if (leftNode && rightNode) {
-        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim(), dotted: isDottedArrow(edgeMatch[2]) })
+        const arrow = edgeMatch[2]
+        edges.push({ id: edgeIdFor(leftNode.id, rightNode.id), from: leftNode.id, to: rightNode.id, label: (edgeMatch[3] || '').trim(), dotted: isDottedArrow(arrow), noArrow: isNoArrow(arrow) })
       }
       continue
     }

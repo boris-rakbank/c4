@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDiagramStore } from '../stores/diagramStore.js'
 import { TYPES, COLORS, COLOR_NAMES, DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
@@ -12,6 +12,12 @@ const currentColorName = computed(() => {
   return parseClassName(selectedNode.value.className)?.colorName || DEFAULT_COLOR
 })
 
+const isFilled = computed(() => {
+  if (!selectedNode.value) return true
+  const parsed = parseClassName(selectedNode.value.className)
+  return parsed?.filled !== false
+})
+
 function onTypeChange(e) {
   if (!selectedNode.value) return
   store.setNodeStyle(selectedNode.value.id, { type: e.target.value })
@@ -21,6 +27,59 @@ function onColorChange(name) {
   if (!selectedNode.value) return
   store.setNodeStyle(selectedNode.value.id, { colorName: name })
 }
+
+function onFilledChange(e) {
+  if (!selectedNode.value) return
+  store.setNodeStyle(selectedNode.value.id, { filled: e.target.checked })
+}
+
+// Local mirror of bracket-content fields so typing doesn't reparse on
+// every keystroke. We debounce-flush 350ms after the last edit and on
+// blur. When the selected node changes (or its source-derived value
+// changes from elsewhere), we sync the local copy.
+const localTitle       = ref('')
+const localTypeTitle   = ref('')
+const localDescription = ref('')
+
+watch(
+  () => selectedNode.value && {
+    id: selectedNode.value.id,
+    title: selectedNode.value.title,
+    typeTitle: selectedNode.value.typeTitle,
+    description: selectedNode.value.description,
+  },
+  (v) => {
+    localTitle.value       = v?.title       || ''
+    localTypeTitle.value   = v?.typeTitle   || ''
+    localDescription.value = v?.description || ''
+  },
+  { immediate: true }
+)
+
+let flushTimer = null
+let pendingPatch = {}
+let pendingId = null
+
+function flushContent() {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (!pendingId || Object.keys(pendingPatch).length === 0) return
+  store.setNodeContent(pendingId, pendingPatch)
+  pendingPatch = {}
+  pendingId = null
+}
+
+function scheduleContentUpdate(field, value) {
+  if (!selectedNode.value) return
+  pendingId = selectedNode.value.id
+  pendingPatch[field] = value
+  clearTimeout(flushTimer)
+  flushTimer = setTimeout(flushContent, 350)
+}
+
+onBeforeUnmount(() => flushContent())
 </script>
 
 <template>
@@ -57,6 +116,43 @@ function onColorChange(name) {
             @click="onColorChange(name)"
           />
         </div>
+      </div>
+
+      <div class="field-inline">
+        <label class="checkbox">
+          <input type="checkbox" :checked="isFilled" @change="onFilledChange" />
+          Filled
+        </label>
+      </div>
+
+      <div class="field">
+        <label>Name</label>
+        <input
+          type="text"
+          v-model="localTitle"
+          @input="scheduleContentUpdate('title', localTitle)"
+          @blur="flushContent"
+        />
+      </div>
+
+      <div class="field">
+        <label>Container Name</label>
+        <input
+          type="text"
+          v-model="localTypeTitle"
+          @input="scheduleContentUpdate('typeTitle', localTypeTitle)"
+          @blur="flushContent"
+        />
+      </div>
+
+      <div class="field">
+        <label>Description</label>
+        <textarea
+          rows="3"
+          v-model="localDescription"
+          @input="scheduleContentUpdate('description', localDescription)"
+          @blur="flushContent"
+        />
       </div>
     </div>
   </div>
@@ -129,18 +225,53 @@ function onColorChange(name) {
   color: #64748b;
 }
 
-.field select {
+.field select,
+.field input[type="text"],
+.field textarea {
   padding: 6px 8px;
   font-size: 13px;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
   background: #ffffff;
   outline: none;
-  cursor: pointer;
+  font-family: inherit;
 }
 
-.field select:focus {
+.field select { cursor: pointer; }
+
+.field textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.4;
+}
+
+.field select:focus,
+.field input[type="text"]:focus,
+.field textarea:focus {
   border-color: #3b82f6;
+}
+
+.field-inline {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .swatches {

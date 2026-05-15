@@ -6,8 +6,6 @@ import C4Boundary from './C4Boundary.vue'
 import C4Node from './C4Node.vue'
 import C4Edge from './C4Edge.vue'
 
-const CANVAS_PADDING = 200
-
 const store = useDiagramStore()
 const { nodes, routedEdges, boundaries } = storeToRefs(store)
 const svgRef = ref(null)
@@ -22,7 +20,7 @@ const canvasWidth = computed(() => {
     const r = b.x + b.width
     if (r > maxR) maxR = r
   }
-  return Math.max(maxR + CANVAS_PADDING, 1200)
+  return maxR
 })
 
 const canvasHeight = computed(() => {
@@ -35,7 +33,7 @@ const canvasHeight = computed(() => {
     const bot = b.y + b.height
     if (bot > maxB) maxB = bot
   }
-  return Math.max(maxB + CANVAS_PADDING, 800)
+  return maxB
 })
 
 function downloadSvg() {

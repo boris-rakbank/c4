@@ -67,7 +67,7 @@ const labelPos = computed(() => {
       :stroke-dasharray="strokeDasharray"
       stroke-linejoin="round"
       stroke-linecap="round"
-      marker-end="url(#arrowhead)"
+      :marker-end="edge.noArrow ? null : 'url(#arrowhead)'"
     />
     <text
       v-if="labelLines.length && labelPos"

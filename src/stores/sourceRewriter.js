@@ -40,8 +40,11 @@ export function setNodeType(source, nodeId, newType) {
 /**
  * Ensure a `classDef <className> ...` line exists. If absent, append it
  * after the last existing classDef line, or at end-of-file otherwise.
+ *
+ * When `filled` is false, swap `fill` ↔ `stroke` so the node renders
+ * as a white box with colored text (and the same colored border).
  */
-export function ensureClassDef(source, className, colorName) {
+export function ensureClassDef(source, className, colorName, filled = true) {
   const color = COLORS[colorName]
   if (!color) return source
 
@@ -49,7 +52,9 @@ export function ensureClassDef(source, className, colorName) {
   const defRe = new RegExp(`^\\s*classDef\\s+${esc(className)}\\b`)
   if (lines.some(l => defRe.test(l))) return source
 
-  const defLine = `    classDef ${className} fill:${color.fill},stroke:${color.stroke},color:${color.color}`
+  const fillVal   = filled ? color.fill   : color.stroke
+  const strokeVal = filled ? color.stroke : color.fill
+  const defLine = `    classDef ${className} fill:${fillVal},stroke:${strokeVal},color:${color.color}`
 
   // Find last classDef line
   let lastDefIdx = -1
@@ -249,12 +254,53 @@ export function pruneUnusedClassDefs(source) {
  * - Ensures the matching classDef exists.
  * - Prunes any classDef that became unused.
  */
-export function applyNodeStyle(source, nodeId, { type, colorName }) {
+export function applyNodeStyle(source, nodeId, { type, colorName, filled = true }) {
   let s = source
   if (type) s = setNodeType(s, nodeId, type)
-  const className = classNameFor(type, colorName)
+  const className = classNameFor(type, colorName, filled)
   s = setNodeClass(s, nodeId, className)
-  s = ensureClassDef(s, className, colorName)
+  s = ensureClassDef(s, className, colorName, filled)
   s = pruneUnusedClassDefs(s)
   return s
+}
+
+/**
+ * Update the bracket content for `nodeId`. Each field in `patch` is
+ * optional; undefined keys leave the existing value alone. Empty strings
+ * clear that segment (a trailing empty segment is dropped from the
+ * rebuilt `<br/>` list so the source stays tidy).
+ *
+ *   patch = { typeTitle?: string, title?: string, description?: string }
+ */
+export function setNodeContent(source, nodeId, patch) {
+  const re = new RegExp(`\\b(${esc(nodeId)})\\[([^\\]]*)\\]`, 'g')
+  return source.replace(re, (_, id, content) => {
+    const parts = content.split(/<br\s*\/?>/i).map(p => p.trim())
+    // Decompose part 0 into type + typeTitle (matches mermaidParser).
+    let type = ''
+    let currTypeTitle = ''
+    const typeMatch = (parts[0] || '').match(/^([\w-]+)\s*:\s*(.+)$/s)
+    if (typeMatch) {
+      type = typeMatch[1]
+      currTypeTitle = typeMatch[2]
+    } else if (/^[\w-]+$/.test(parts[0] || '')) {
+      type = parts[0]
+    } else {
+      currTypeTitle = parts[0] || ''
+    }
+    const currTitle = parts[1] || ''
+    const currDesc  = parts.slice(2).join('<br/>')
+
+    const nextTypeTitle = patch.typeTitle   !== undefined ? patch.typeTitle   : currTypeTitle
+    const nextTitle     = patch.title       !== undefined ? patch.title       : currTitle
+    const nextDesc      = patch.description !== undefined ? patch.description : currDesc
+
+    const firstPart = type
+      ? (nextTypeTitle ? `${type}: ${nextTypeTitle}` : type)
+      : nextTypeTitle
+    // Drop trailing empty segments so we don't emit "Foo[type: x<br/><br/>]".
+    const segments = [firstPart, nextTitle, nextDesc]
+    while (segments.length > 1 && segments[segments.length - 1] === '') segments.pop()
+    return `${id}[${segments.join('<br/>')}]`
+  })
 }
