@@ -139,10 +139,75 @@ function splitLines(s) {
   return String(s).split(/\\n|\n/)
 }
 
-const titleLines = computed(() => splitLines(props.node.title))
+// Shared offscreen canvas for SVG-text width measurement. Reused
+// across every C4Node instance so we don't allocate per call.
+let _measureCtx = null
+function getMeasureCtx() {
+  if (_measureCtx) return _measureCtx
+  if (typeof document === 'undefined') return null
+  _measureCtx = document.createElement('canvas').getContext('2d')
+  return _measureCtx
+}
+function measureWidth(text, fontCss) {
+  const ctx = getMeasureCtx()
+  if (!ctx) return text.length * 8
+  ctx.font = fontCss
+  return ctx.measureText(text).width
+}
+
+// Greedy word-wrap: keep adding words until the line would exceed
+// `maxWidth`, then start a new one. A single word longer than the
+// line gets hard-broken character by character.
+function wrapToWidth(text, maxWidth, fontCss) {
+  if (!text) return []
+  const words = String(text).split(/\s+/).filter(Boolean)
+  if (!words.length) return []
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word
+    if (measureWidth(candidate, fontCss) <= maxWidth) {
+      current = candidate
+      continue
+    }
+    if (current) lines.push(current)
+    if (measureWidth(word, fontCss) > maxWidth) {
+      let acc = ''
+      for (const ch of word) {
+        if (acc && measureWidth(acc + ch, fontCss) > maxWidth) {
+          lines.push(acc)
+          acc = ch
+        } else {
+          acc += ch
+        }
+      }
+      current = acc
+    } else {
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines
+}
+
+const TITLE_FONT_SIZE = 16
+const TITLE_FONT_CSS = `bold ${TITLE_FONT_SIZE}px sans-serif`
+const TITLE_INNER_MARGIN = 20
+
+const titleLines = computed(() => {
+  const raw = props.node.title
+  if (raw == null || raw === '') return []
+  const maxW = Math.max(40, (props.node.width || 200) - TITLE_INNER_MARGIN)
+  const out = []
+  for (const seg of splitLines(raw)) {
+    const wrapped = wrapToWidth(seg, maxW, TITLE_FONT_CSS)
+    if (wrapped.length) out.push(...wrapped)
+  }
+  return out.length ? out : [String(raw)]
+})
 const descriptionLines = computed(() => splitLines(props.node.description))
 const typeTagLines = computed(() => buildTypeTagLines(props.node))
-const TITLE_LINE_H = 16
+const TITLE_LINE_H = 18
 const TYPE_LINE_H = 12
 const DESC_LINE_H = 12
 
@@ -344,13 +409,13 @@ const descriptionStartY = computed(() => {
 
     <!-- ==================== TEXT LABELS ==================== -->
 
-    <!-- Title (bold) — supports \n-separated multi-line -->
+    <!-- Title (bold) — supports \n-separated multi-line + auto-wrap -->
     <text
       :x="w / 2"
       :y="textStartY()"
       text-anchor="middle"
       :fill="getColors().text"
-      font-size="14"
+      :font-size="TITLE_FONT_SIZE"
       font-weight="bold"
       font-family="sans-serif"
     ><tspan
