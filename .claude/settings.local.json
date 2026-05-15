@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__context7__resolve-library-id"
+      "mcp__context7__resolve-library-id",
+      "Bash(node *)",
+      "Bash(git *)",
+      "Bash(gh workflow *)",
+      "Bash(gh auth *)"
     ]
   }
 }
