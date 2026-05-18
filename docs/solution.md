@@ -151,38 +151,66 @@ normals of the attach sides, we do the following:
 
 An edge where `from === to` cannot be routed by A\* (both cells
 coincide) and `pickSides` would return a zero vector. Self-loops are
-detected in Pass 2 and skipped past the slot groups entirely. Instead
-each self-loop gets a per-node index (first loop = 0, second = 1, …),
-and `buildSelfLoop(node, index)` emits a fixed 6-point C-shape
-wrapped around the **right** side of the node:
+detected in Pass 2 and handled specially, but they **still participate
+in slot distribution** on the source node's top and bottom sides —
+not skipped. To make them sort cleanly to the rightmost slot (after
+all normal edges on those sides), we add them to the `top` and
+`bottom` groups with a virtual `otherCenter` pushed far off to the
+right of the node:
+
+```text
+virtualX = node.x + node.width + 10_000 + idx
+addToGroup(node.id, 'top',    edge.id, { x: virtualX, … })
+addToGroup(node.id, 'bottom', edge.id, { x: virtualX, … })
+```
+
+The `+ idx` nudge keeps successive self-loops in a stable left-to-right
+order within the rightmost slots so each gets its own fraction from the
+generic distribution pass.
+
+`buildSelfLoop(node, index, topFrac, bottomFrac)` then emits a fixed
+6-point C-shape wrapped around the **right** side of the node:
 
 ```text
   top side → up → right past node → down past node → back left → bottom side
 ```
 
-`index` controls two parameters so multiple self-loops on the same
-node nest as concentric rectangles rather than stacking:
-
-- bend distance `D = 25 + index * 22` (each loop bends further out
-  to the right)
-- anchor fraction along top/bottom `f = 0.78 - index * 0.12`
-  (each loop's anchor moves leftward along the node)
+- The **top and bottom anchor fractions** (`topFrac` / `bottomFrac`)
+  come from the slot-distribution pass, so the loop's anchors coexist
+  with any non-self-loop edges attached to the same sides instead of
+  overwriting them.
+- The **bend distance** `D = 25 + index * 22` is the only parameter
+  driven by the per-node self-loop `index` (0-based count of loops on
+  this node). This nests multiple self-loops on one node as
+  concentric rectangles to the right rather than overlapping.
 
 ---
 
-### Dotted (response) edges
+### Edge style flags: `dotted` and `noArrow`
 
-The parser tracks each edge's arrow style via a small helper
-`isDottedArrow(arrow)` — any arrow token containing a `.` is treated
-as dotted, which matches Mermaid's dotted flowchart arrow forms
-(`-.->`, `-.-.->`, etc.). The `edge.dotted` boolean flows through
-the router unchanged (routing is pure geometry — style doesn't
-affect paths) and ends up on the polyline in
-[C4Edge.vue](../src/components/C4Edge.vue) where
-`stroke-dasharray` is a computed property:
+The parser tracks two render-only flags on each edge — both are pure
+geometry-independent metadata that flows through the router unchanged
+(routing doesn't care about style) and is honored by
+[C4Edge.vue](../src/components/C4Edge.vue) at draw time.
+
+**`edge.dotted`** is set by `isDottedArrow(arrow)` — any arrow token
+containing a `.` qualifies, which covers both Mermaid's dotted
+arrow forms (`-.->`, `-.-.->`) and the non-arrow dotted link `-.-`.
+It drives the polyline's `stroke-dasharray`:
 
 - `edge.dotted === true` → `"2 4"` — short-gap dotted stroke
 - otherwise                → `"6 3"` — the default dashed stroke
+
+**`edge.noArrow`** is set by `isNoArrow(arrow)` — true for any token
+without a `>`, covering Mermaid's plain link forms (`---`, `-.-`,
+`===`). It controls the polyline's `marker-end`:
+
+- `edge.noArrow === true` → `marker-end` is suppressed (plain line)
+- otherwise                → `marker-end="url(#arrowhead)"`
+
+These flags are orthogonal — a `-.-` link is both `dotted` and
+`noArrow`, a `---` link is `noArrow` only, a `-.->` arrow is
+`dotted` only, a `-->` arrow is neither.
 
 This is also how the sequence-diagram converter at
 [sequenceConverter.js](../src/parser/sequenceConverter.js) preserves
