@@ -126,10 +126,17 @@ export function parseMermaid(source) {
   // Pre-scan: collect saved node positions from `%% @pos id x y` comments.
   // These override the default auto-layout for any node that has one.
   const savedPositions = new Map()
+  // And per-node title font size from `%% @font id size` comments.
+  // Subtitles render at (size - 1) — see C4Node.vue.
+  const savedFontSizes = new Map()
   for (const line of contentLines) {
     const pm = line.match(/^%%\s*@pos\s+(\w+)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$/)
     if (pm) {
       savedPositions.set(pm[1], { x: parseFloat(pm[2]), y: parseFloat(pm[3]) })
+    }
+    const fm = line.match(/^%%\s*@font\s+(\w+)\s+(\d+(?:\.\d+)?)\s*$/)
+    if (fm) {
+      savedFontSizes.set(fm[1], parseFloat(fm[2]))
     }
   }
 
@@ -349,6 +356,7 @@ export function parseMermaid(source) {
       boundaryId: node._boundaryId || null,
       className: assignedClass,
       style: nodeStyle,
+      titleFontSize: savedFontSizes.get(node.id) || null,
       x, y,
       width: NODE_WIDTH,
       height: NODE_HEIGHT,

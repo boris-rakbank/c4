@@ -18,6 +18,19 @@ const isFilled = computed(() => {
   return parsed?.filled !== false
 })
 
+const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32]
+const DEFAULT_FONT_SIZE = 16
+
+const currentFontSize = computed(() => {
+  if (!selectedNode.value) return DEFAULT_FONT_SIZE
+  return selectedNode.value.titleFontSize || DEFAULT_FONT_SIZE
+})
+
+function onFontSizeChange(e) {
+  if (!selectedNode.value) return
+  store.setNodeFontSize(selectedNode.value.id, parseInt(e.target.value, 10))
+}
+
 function onTypeChange(e) {
   if (!selectedNode.value) return
   store.setNodeStyle(selectedNode.value.id, { type: e.target.value })
@@ -123,6 +136,13 @@ onBeforeUnmount(() => flushContent())
           <input type="checkbox" :checked="isFilled" @change="onFilledChange" />
           Filled
         </label>
+      </div>
+
+      <div class="field">
+        <label>Title Font Size</label>
+        <select :value="currentFontSize" @change="onFontSizeChange">
+          <option v-for="s in FONT_SIZES" :key="s" :value="s">{{ s }}px</option>
+        </select>
       </div>
 
       <div class="field">

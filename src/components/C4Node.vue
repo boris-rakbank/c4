@@ -190,34 +190,44 @@ function wrapToWidth(text, maxWidth, fontCss) {
   return lines
 }
 
-const TITLE_FONT_SIZE = 16
-const TITLE_FONT_CSS = `bold ${TITLE_FONT_SIZE}px sans-serif`
+const TITLE_FONT_SIZE_DEFAULT = 16
 const TITLE_INNER_MARGIN = 20
+
+const titleFontSize = computed(() =>
+  props.node.titleFontSize || TITLE_FONT_SIZE_DEFAULT
+)
+// Subtitles (typeTitle + description) render one px smaller than the
+// title, never below 8px.
+const subtitleFontSize = computed(() =>
+  Math.max(8, titleFontSize.value - 1)
+)
+// Line heights track font size so increased fonts still get sane spacing.
+const TITLE_LINE_H = computed(() => Math.round(titleFontSize.value * 1.15))
+const TYPE_LINE_H  = computed(() => Math.round(subtitleFontSize.value * 1.2))
+const DESC_LINE_H  = computed(() => Math.round(subtitleFontSize.value * 1.2))
 
 const titleLines = computed(() => {
   const raw = props.node.title
   if (raw == null || raw === '') return []
   const maxW = Math.max(40, (props.node.width || 200) - TITLE_INNER_MARGIN)
+  const fontCss = `bold ${titleFontSize.value}px sans-serif`
   const out = []
   for (const seg of splitLines(raw)) {
-    const wrapped = wrapToWidth(seg, maxW, TITLE_FONT_CSS)
+    const wrapped = wrapToWidth(seg, maxW, fontCss)
     if (wrapped.length) out.push(...wrapped)
   }
   return out.length ? out : [String(raw)]
 })
 const descriptionLines = computed(() => splitLines(props.node.description))
 const typeTagLines = computed(() => buildTypeTagLines(props.node))
-const TITLE_LINE_H = 18
-const TYPE_LINE_H = 12
-const DESC_LINE_H = 12
 
 const typeTagY = computed(() => {
   const extraTitleLines = Math.max(titleLines.value.length - 1, 0)
-  return textStartY() + 18 + extraTitleLines * TITLE_LINE_H
+  return textStartY() + Math.round(titleFontSize.value * 1.1) + extraTitleLines * TITLE_LINE_H.value
 })
 const descriptionStartY = computed(() => {
   const extraTypeLines = Math.max(typeTagLines.value.length - 1, 0)
-  return typeTagY.value + 16 + extraTypeLines * TYPE_LINE_H
+  return typeTagY.value + Math.round(subtitleFontSize.value * 1.3) + extraTypeLines * TYPE_LINE_H.value
 })
 </script>
 
@@ -415,7 +425,7 @@ const descriptionStartY = computed(() => {
       :y="textStartY()"
       text-anchor="middle"
       :fill="getColors().text"
-      :font-size="TITLE_FONT_SIZE"
+      :font-size="titleFontSize"
       font-weight="bold"
       font-family="sans-serif"
     ><tspan
@@ -431,7 +441,7 @@ const descriptionStartY = computed(() => {
       :y="typeTagY"
       text-anchor="middle"
       :fill="getColors().text"
-      font-size="10"
+      :font-size="subtitleFontSize"
       opacity="0.8"
       font-family="sans-serif"
     ><tspan
@@ -448,7 +458,7 @@ const descriptionStartY = computed(() => {
       :y="descriptionStartY"
       text-anchor="middle"
       :fill="getColors().text"
-      font-size="10"
+      :font-size="subtitleFontSize"
       opacity="0.6"
       font-family="sans-serif"
     ><tspan

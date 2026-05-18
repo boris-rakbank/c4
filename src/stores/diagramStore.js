@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { parseMermaid } from '../parser/mermaidParser.js'
 import { convertSequenceToGraph } from '../parser/sequenceConverter.js'
-import { applyNodeStyle, setNodeContent, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
+import { applyNodeStyle, setNodeContent, setNodeFontSize, setNodePositions, setEdgeRoutes } from './sourceRewriter.js'
 import { DEFAULT_COLOR, parseClassName } from '../styles/palette.js'
 import { routeAllEdges } from '../routing/orthogonalRouter.js'
 import { applyForceLayout } from '../layout/forceLayout.js'
@@ -70,6 +70,13 @@ export const useDiagramStore = defineStore('diagram', () => {
     const node = nodes.value.find(n => n.id === id)
     if (!node) return
     const newSource = setNodeContent(mermaidSource.value, id, patch)
+    updateFromSource(newSource)
+  }
+
+  function setNodeFontSizeAction(id, size) {
+    const node = nodes.value.find(n => n.id === id)
+    if (!node) return
+    const newSource = setNodeFontSize(mermaidSource.value, id, size)
     updateFromSource(newSource)
   }
 
@@ -518,6 +525,7 @@ export const useDiagramStore = defineStore('diagram', () => {
     clearSelection,
     setNodeStyle,
     setNodeContent: setNodeContentAction,
+    setNodeFontSize: setNodeFontSizeAction,
     runForceLayout,
     snapActivePosition,
     promptSequenceConversion,

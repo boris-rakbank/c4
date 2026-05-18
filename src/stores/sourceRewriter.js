@@ -226,6 +226,42 @@ export function setEdgeRoutes(source, routes) {
 }
 
 /**
+ * Set (or clear, when `size` is null) the title font size for `nodeId`,
+ * persisted as a `%% @font <id> <size>` comment placed immediately above
+ * the matching `class <id> ...` line (or appended at end of source if no
+ * such line exists). Any existing `@font` line for the same id is
+ * stripped first so the file stays single-source-of-truth.
+ */
+export function setNodeFontSize(source, nodeId, size) {
+  const lines = source.split('\n').filter(l => {
+    const m = l.match(/^\s*%%\s*@font\s+(\S+)/)
+    return !m || m[1] !== nodeId
+  })
+  if (size == null) return lines.join('\n')
+
+  const out = []
+  let inserted = false
+  for (const line of lines) {
+    if (!inserted) {
+      const m = line.match(/^(\s*)class\s+(.+?)\s+(\S+)\s*$/)
+      if (m) {
+        const ids = m[2].split(',').map(s => s.trim()).filter(Boolean)
+        if (ids.length === 1 && ids[0] === nodeId) {
+          out.push(`${m[1]}%% @font ${nodeId} ${size}`)
+          inserted = true
+        }
+      }
+    }
+    out.push(line)
+  }
+  if (!inserted) {
+    while (out.length && out[out.length - 1].trim() === '') out.pop()
+    out.push(`    %% @font ${nodeId} ${size}`)
+  }
+  return out.join('\n')
+}
+
+/**
  * Drop any `classDef X ...` line where no `class ... X` line references it.
  * Keeps the lazy invariant: removed/changed assignments don't leave dead defs.
  */
