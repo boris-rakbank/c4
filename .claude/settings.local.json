@@ -5,7 +5,9 @@
       "Bash(node *)",
       "Bash(git *)",
       "Bash(gh workflow *)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(pip cache *)",
+      "Bash(npm cache *)"
     ]
   }
 }
